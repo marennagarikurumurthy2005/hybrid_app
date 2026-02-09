@@ -48,6 +48,7 @@ Example JSON Response:
     "phone": "+919999999999",
     "role": "USER",
     "wallet_balance": 0,
+    "reward_balance": 0,
     "is_active": true,
     "created_at": "2026-02-09T08:00:00Z"
   }
@@ -76,7 +77,8 @@ Example JSON Response:
     "_id": "<user_id>",
     "phone": "+919999999999",
     "role": "USER",
-    "wallet_balance": 12000
+    "wallet_balance": 12000,
+    "reward_balance": 50
   }
 }
 ```
@@ -291,6 +293,105 @@ Example JSON Response:
 Error Cases:
 - 404 Restaurant not found
 
+**Recommendations**
+Endpoint: `GET /api/v1/recommendations/`
+Purpose: List recommended restaurants and menu items for users.
+Method: GET
+Required Headers: none
+Authentication: None
+Request Body Schema: none
+Example Request:
+```
+GET /api/v1/recommendations/
+```
+Example JSON Response:
+```json
+{
+  "recommendations": [
+    {
+      "_id": "<recommendation_id>",
+      "type": "MENU_ITEM",
+      "title": "Best Biryani",
+      "description": "Top pick by admin",
+      "menu_item": { "_id": "<menu_id>", "name": "Chicken Biryani", "price": 25000 },
+      "restaurant": { "_id": "<restaurant_id>", "name": "Biryani House" }
+    }
+  ]
+}
+```
+
+Endpoint: `POST /api/v1/admin/recommendations/`
+Purpose: Create a new recommendation (admin only).
+Method: POST
+Required Headers:
+`Content-Type: application/json`
+`Authorization: Bearer <jwt>`
+Authentication: JWT (ADMIN)
+Request Body Schema:
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `type` | string | Yes | `RESTAURANT` or `MENU_ITEM` |
+| `reference_id` | string | Yes | Restaurant or menu item id |
+| `title` | string | Yes | Display title |
+| `description` | string | Yes | Description text |
+Example JSON Request:
+```json
+{
+  "type": "MENU_ITEM",
+  "reference_id": "<menu_id>",
+  "title": "Best Biryani",
+  "description": "Top pick by admin"
+}
+```
+Example JSON Response:
+```json
+{ "recommendation": { "_id": "<recommendation_id>", "type": "MENU_ITEM" } }
+```
+Error Cases:
+- 400 Invalid recommendation type
+- 400 Invalid reference id
+- 403 Role not allowed
+
+Endpoint: `GET /api/v1/admin/recommendations/`
+Purpose: List all recommendations (admin only).
+Method: GET
+Required Headers:
+`Authorization: Bearer <jwt>`
+Authentication: JWT (ADMIN)
+Request Body Schema: none
+Example Request:
+```
+GET /api/v1/admin/recommendations/
+```
+Example JSON Response:
+```json
+{ "recommendations": [{ "_id": "<recommendation_id>", "type": "RESTAURANT" }] }
+```
+Error Cases:
+- 403 Role not allowed
+
+Endpoint: `DELETE /api/v1/admin/recommendations/{id}/`
+Purpose: Delete a recommendation (admin only).
+Method: DELETE
+Required Headers:
+`Authorization: Bearer <jwt>`
+Authentication: JWT (ADMIN)
+Path Params:
+| Param | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `id` | string | Yes | Recommendation id |
+Example Request:
+```
+DELETE /api/v1/admin/recommendations/<id>/
+```
+Example JSON Response:
+```json
+{ "deleted": true }
+```
+Error Cases:
+- 404 Recommendation not found
+- 403 Role not allowed
+
 **Orders (Ride + Food)**
 Food Orders
 Endpoint: `POST /api/v1/orders/checkout/`
@@ -305,11 +406,13 @@ Request Body Schema:
 | --- | --- | --- | --- |
 | `restaurant_id` | string | Yes | Restaurant id |
 | `items` | array | Yes | List of `{menu_item_id, quantity}` |
+| `redeem_points` | integer | No | Reward points to redeem (1 point = 1 INR = 100 paise) |
 Example JSON Request:
 ```json
 {
   "restaurant_id": "<restaurant_id>",
-  "items": [{"menu_item_id": "<menu_id>", "quantity": 2}]
+  "items": [{"menu_item_id": "<menu_id>", "quantity": 2}],
+  "redeem_points": 50
 }
 ```
 Example JSON Response:
@@ -319,12 +422,16 @@ Example JSON Response:
   "subtotal": 50000,
   "surge_multiplier": 1.2,
   "surge_amount": 10000,
-  "total": 60000
+  "total_before_rewards": 60000,
+  "redeem_points_applied": 50,
+  "redeem_amount": 5000,
+  "total": 55000
 }
 ```
 Error Cases:
 - 400 Invalid restaurant id
 - 400 Invalid item or quantity
+- 400 Insufficient reward points
 - 404 Restaurant not found
 
 Endpoint: `POST /api/v1/orders/`
@@ -341,19 +448,21 @@ Request Body Schema:
 | `items` | array | Yes | List of `{menu_item_id, quantity}` |
 | `payment_mode` | string | Yes | `RAZORPAY`, `COD`, `WALLET`, `WALLET_RAZORPAY` (also accepts `WALLET + RAZORPAY`) |
 | `wallet_amount` | integer | No | Wallet usage in paise |
+| `redeem_points` | integer | No | Reward points to redeem (1 point = 1 INR = 100 paise) |
 Example JSON Request:
 ```json
 {
   "restaurant_id": "<restaurant_id>",
   "items": [{"menu_item_id": "<menu_id>", "quantity": 2}],
   "payment_mode": "WALLET_RAZORPAY",
-  "wallet_amount": 5000
+  "wallet_amount": 5000,
+  "redeem_points": 50
 }
 ```
 Example JSON Response:
 ```json
 {
-  "order": { "_id": "<order_id>", "status": "PENDING_PAYMENT", "amount_total": 60000 },
+  "order": { "_id": "<order_id>", "status": "PENDING_PAYMENT", "amount_total": 55000, "points_earned": 0, "points_redeemed": 50 },
   "items": [{"menu_item_id": "<menu_id>", "quantity": 2, "total": 50000}],
   "razorpay_order": { "id": "order_abc" }
 }
@@ -362,6 +471,7 @@ Error Cases:
 - 400 Invalid payment mode
 - 400 Invalid wallet amount
 - 400 Insufficient wallet balance
+- 400 Insufficient reward points
 - 404 Restaurant not found
 
 Endpoint: `POST /api/v1/orders/verify-payment/`

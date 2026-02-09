@@ -8,6 +8,7 @@ from core.utils import serialize_doc
 from orders.serializers import CheckoutSerializer, CreateOrderSerializer, VerifyPaymentSerializer
 from orders import services
 from pricing import services as pricing_services
+from rewards import services as reward_services
 from core.db import get_db
 from core.utils import to_object_id
 
@@ -19,7 +20,8 @@ class OrderCheckoutView(APIView):
     # Sample payload:
     # {
     #   "restaurant_id": "<restaurant_id>",
-    #   "items": [{"menu_item_id": "<menu_id>", "quantity": 2}]
+    #   "items": [{"menu_item_id": "<menu_id>", "quantity": 2}],
+    #   "redeem_points": 50
     # }
     def post(self, request):
         serializer = CheckoutSerializer(data=request.data)
@@ -50,11 +52,29 @@ class OrderCheckoutView(APIView):
                 surge_amount = max(0, total_amount - subtotal)
         except Exception:
             pass
+        total_before_rewards = total_amount
+        redeem_points = serializer.validated_data.get("redeem_points")
+        redeem_points_applied = 0
+        redeem_amount = 0
+        if redeem_points is not None:
+            try:
+                redeem_points_applied, redeem_amount, _ = reward_services.calculate_redeemable_points(
+                    request.user.id,
+                    total_amount,
+                    redeem_points,
+                )
+            except ValueError as exc:
+                return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+            total_amount = max(0, total_amount - redeem_amount)
+
         return Response({
             "items": serialize_doc(items),
             "subtotal": subtotal,
             "surge_multiplier": round(surge_multiplier, 2),
             "surge_amount": surge_amount,
+            "total_before_rewards": total_before_rewards,
+            "redeem_points_applied": redeem_points_applied,
+            "redeem_amount": redeem_amount,
             "total": total_amount,
         })
 
@@ -68,7 +88,8 @@ class OrderCreateView(APIView):
     #   "restaurant_id": "<restaurant_id>",
     #   "items": [{"menu_item_id": "<menu_id>", "quantity": 2}],
     #   "payment_mode": "WALLET + RAZORPAY",
-    #   "wallet_amount": 5000
+    #   "wallet_amount": 5000,
+    #   "redeem_points": 50
     # }
     def post(self, request):
         serializer = CreateOrderSerializer(data=request.data)
@@ -80,6 +101,7 @@ class OrderCreateView(APIView):
                 items=serializer.validated_data["items"],
                 payment_mode=serializer.validated_data["payment_mode"],
                 wallet_amount=serializer.validated_data.get("wallet_amount"),
+                redeem_points=serializer.validated_data.get("redeem_points"),
             )
         except ValueError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)

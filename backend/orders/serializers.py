@@ -9,6 +9,7 @@ class CheckoutItemSerializer(serializers.Serializer):
 class CheckoutSerializer(serializers.Serializer):
     restaurant_id = serializers.CharField()
     items = CheckoutItemSerializer(many=True)
+    redeem_points = serializers.IntegerField(required=False, min_value=0)
 
 
 class CreateOrderSerializer(serializers.Serializer):
@@ -16,6 +17,7 @@ class CreateOrderSerializer(serializers.Serializer):
     items = CheckoutItemSerializer(many=True)
     payment_mode = serializers.CharField()
     wallet_amount = serializers.IntegerField(required=False, min_value=0)
+    redeem_points = serializers.IntegerField(required=False, min_value=0)
 
 
 class VerifyPaymentSerializer(serializers.Serializer):

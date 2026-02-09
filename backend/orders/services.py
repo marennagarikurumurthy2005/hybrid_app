@@ -7,9 +7,10 @@ from payments import services as payment_services
 from notifications import services as notification_services
 from core import matching_service
 from pricing import services as pricing_services
+from rewards import services as reward_services
+from recommendations import services as recommendation_services
 
 PAYMENT_MODES = {"RAZORPAY", "COD", "WALLET", "WALLET_RAZORPAY"}
-FOOD_REWARD_RATE = 0.02
 
 
 def normalize_payment_mode(mode: Optional[str]):
@@ -69,6 +70,7 @@ def create_order(
     items: List[Dict],
     payment_mode: str,
     wallet_amount: Optional[int],
+    redeem_points: Optional[int] = None,
 ):
     db = get_db()
     rid = to_object_id(restaurant_id)
@@ -98,21 +100,34 @@ def create_order(
     if not mode:
         raise ValueError("Invalid payment mode")
 
+    redeem_points_applied = 0
+    redeem_amount = 0
+    if redeem_points is not None:
+        redeem_points_applied, redeem_amount, _ = reward_services.calculate_redeemable_points(
+            user_id,
+            total_amount,
+            redeem_points,
+        )
+    total_after_rewards = max(0, total_amount - redeem_amount)
+
     wallet_to_use = 0
     if mode == "WALLET":
-        wallet_to_use = int(wallet_amount or total_amount)
-        if wallet_to_use < total_amount:
+        wallet_to_use = int(wallet_amount or total_after_rewards)
+        if wallet_to_use < total_after_rewards:
             raise ValueError("Wallet amount must cover the full total")
+        if wallet_to_use > total_after_rewards:
+            wallet_to_use = total_after_rewards
     elif mode == "WALLET_RAZORPAY":
         wallet_to_use = int(wallet_amount or 0)
-        if wallet_to_use < 0 or wallet_to_use > total_amount:
+        if wallet_to_use < 0 or wallet_to_use > total_after_rewards:
             raise ValueError("Invalid wallet amount")
     elif mode == "COD" and wallet_amount:
         raise ValueError("Wallet not allowed with COD")
 
-    payment_amount = total_amount - wallet_to_use
+    payment_amount = total_after_rewards - wallet_to_use
     order_id = ObjectId()
     wallet_txn = None
+    reward_txn = None
 
     if wallet_to_use > 0:
         wallet_txn = wallet_services.debit_wallet(
@@ -132,11 +147,15 @@ def create_order(
         "status": "PLACED" if payment_amount == 0 or mode == "COD" else "PENDING_PAYMENT",
         "payment_mode": mode,
         "amount_subtotal": subtotal,
-        "amount_total": total_amount,
+        "amount_total": total_after_rewards,
+        "amount_total_before_rewards": total_amount,
         "surge_multiplier": round(surge_multiplier, 2),
         "surge_amount": surge_amount,
         "surge_meta": surge_data,
         "wallet_amount": wallet_to_use,
+        "reward_redeem_amount": redeem_amount,
+        "points_redeemed": redeem_points_applied,
+        "points_earned": 0,
         "payment_amount": payment_amount,
         "is_paid": payment_amount == 0,
         "job_status": "CREATED",
@@ -146,6 +165,7 @@ def create_order(
         "pickup_location": pickup_location,
         "created_at": utcnow(),
         "captain_id": None,
+        "rewarded": False,
     }
 
     try:
@@ -162,6 +182,15 @@ def create_order(
             }
             for item in order_items
         ])
+
+        if redeem_points_applied > 0:
+            reward_txn = reward_services.redeem_reward_points(
+                user_id,
+                redeem_points_applied,
+                related_order=str(order_id),
+            )
+            if not reward_txn:
+                raise ValueError("Insufficient reward points")
 
         razorpay_order = None
         if payment_amount > 0 and mode in {"RAZORPAY", "WALLET_RAZORPAY"}:
@@ -206,6 +235,13 @@ def create_order(
                 "FOOD",
                 reference=str(order_id),
             )
+        if reward_txn:
+            reward_services.credit_reward_points(
+                user_id,
+                redeem_points_applied,
+                reward_services.REWARD_SOURCE_RECOMMENDATION,
+                related_order=str(order_id),
+            )
         raise exc
 
 
@@ -240,16 +276,32 @@ def award_food_points(order_id: str):
     order_doc = db.orders.find_one({"_id": oid})
     if not order_doc or order_doc.get("rewarded"):
         return None
-    points = int(order_doc.get("amount_subtotal", 0) * FOOD_REWARD_RATE)
-    if points <= 0:
-        db.orders.update_one({"_id": oid}, {"$set": {"rewarded": True, "reward_points": 0}})
+    if not order_doc.get("is_paid") and order_doc.get("payment_mode") != "COD":
         return None
-    txn = wallet_services.credit_wallet(
+
+    order_items = list(db.order_items.find({"order_id": oid}))
+    points = recommendation_services.calculate_recommendation_points(
+        str(order_doc.get("restaurant_id")),
+        order_items,
+    )
+    if points <= 0:
+        db.orders.update_one({"_id": oid}, {"$set": {"rewarded": True, "points_earned": 0}})
+        return None
+    txn = reward_services.credit_reward_points(
         str(order_doc.get("user_id")),
         points,
-        "FOOD_REWARD",
-        "FOOD",
-        reference=str(order_id),
+        reward_services.REWARD_SOURCE_RECOMMENDATION,
+        related_order=str(order_id),
     )
-    db.orders.update_one({"_id": oid}, {"$set": {"rewarded": True, "reward_points": points}})
+    db.orders.update_one({"_id": oid}, {"$set": {"rewarded": True, "points_earned": points}})
+    if txn:
+        try:
+            notification_services.send_to_user(
+                str(order_doc.get("user_id")),
+                "Rewards earned",
+                f"You earned {points} reward points on your order.",
+                {"order_id": str(order_id), "points": points},
+            )
+        except Exception:
+            pass
     return txn

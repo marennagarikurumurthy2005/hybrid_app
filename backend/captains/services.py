@@ -184,6 +184,11 @@ def complete_job(user_id: str, job_type: str, job_id: str):
             {"_id": order_oid},
             {"$set": {"status": "DELIVERED"}},
         )
+        if order_doc and order_doc.get("payment_mode") == "COD":
+            db.orders.update_one(
+                {"_id": order_oid},
+                {"$set": {"is_paid": True}},
+            )
         db.captains.update_one(
             {"user_id": oid},
             {"$pull": {"batched_order_ids": order_oid}},
