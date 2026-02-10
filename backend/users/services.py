@@ -21,6 +21,7 @@ def create_user(phone: str, role: str):
         "phone": phone,
         "role": role,
         "wallet_balance": 0,
+        "reward_points": 0,
         "reward_balance": 0,
         "is_active": True,
         "created_at": utcnow(),

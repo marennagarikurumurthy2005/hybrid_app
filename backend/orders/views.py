@@ -53,18 +53,20 @@ class OrderCheckoutView(APIView):
         except Exception:
             pass
         total_before_rewards = total_amount
+        reward_points_earned = services.calculate_recommended_reward_points(
+            serializer.validated_data["restaurant_id"],
+            items,
+            surge_multiplier,
+        )
         redeem_points = serializer.validated_data.get("redeem_points")
         redeem_points_applied = 0
         redeem_amount = 0
         if redeem_points is not None:
-            try:
-                redeem_points_applied, redeem_amount, _ = reward_services.calculate_redeemable_points(
-                    request.user.id,
-                    total_amount,
-                    redeem_points,
-                )
-            except ValueError as exc:
-                return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+            redeem_points_applied, redeem_amount, _ = reward_services.calculate_redeemable_points(
+                request.user.id,
+                total_amount,
+                redeem_points,
+            )
             total_amount = max(0, total_amount - redeem_amount)
 
         return Response({
@@ -75,6 +77,7 @@ class OrderCheckoutView(APIView):
             "total_before_rewards": total_before_rewards,
             "redeem_points_applied": redeem_points_applied,
             "redeem_amount": redeem_amount,
+            "reward_points_earned": reward_points_earned,
             "total": total_amount,
         })
 

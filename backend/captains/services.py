@@ -1,7 +1,9 @@
 from core.db import get_db
 from core.utils import utcnow, to_object_id
-from core.geo_utils import to_point
+from core.geo_utils import to_point, haversine_km
+from core.vehicles import is_ev_vehicle
 from notifications import services as notification_services
+from django.conf import settings
 
 
 def ensure_captain_profile(user_id: str):
@@ -17,6 +19,7 @@ def ensure_captain_profile(user_id: str):
         "is_online": False,
         "is_busy": False,
         "vehicle_type": None,
+        "is_ev": False,
         "vehicle_number": None,
         "vehicle_brand": None,
         "license_number": None,
@@ -25,6 +28,12 @@ def ensure_captain_profile(user_id: str):
         "is_verified": False,
         "verified_at": None,
         "verification_reason": None,
+        "go_home_mode": False,
+        "home_location": None,
+        "go_home_activated_at": None,
+        "go_home_eta_s": None,
+        "go_home_distance_m": None,
+        "go_home_updated_at": None,
         "location": None,
         "current_job_id": None,
         "current_job_type": None,
@@ -59,6 +68,9 @@ def set_online_status(user_id: str, is_online: bool):
         update["current_job_id"] = None
         update["current_job_type"] = None
         update["current_job"] = None
+        update["go_home_mode"] = False
+        update["home_location"] = None
+        update["go_home_activated_at"] = None
     db.captains.update_one({"user_id": oid}, {"$set": update})
     return db.captains.find_one({"user_id": oid})
 
@@ -68,11 +80,46 @@ def update_location(user_id: str, lat: float, lng: float):
     oid = to_object_id(user_id)
     if not oid:
         return None
+    existing = db.captains.find_one({"user_id": oid})
+    if existing and existing.get("location") and existing.get("last_seen"):
+        coords = existing.get("location", {}).get("coordinates")
+        if coords and coords[0] is not None and coords[1] is not None:
+            last_lat = coords[1]
+            last_lng = coords[0]
+            dist_km = haversine_km(last_lat, last_lng, lat, lng)
+            delta_s = max((utcnow() - existing.get("last_seen")).total_seconds(), 1)
+            speed_kmph = (dist_km / (delta_s / 3600.0)) if delta_s > 0 else 0
+            if speed_kmph > settings.GO_HOME_MAX_SPEED_KMPH:
+                db.trust_logs.insert_one({
+                    "user_id": oid,
+                    "findings": [{"type": "GPS_JUMP", "detail": f"speed={speed_kmph:.2f}km/h"}],
+                    "created_at": utcnow(),
+                })
+                return existing
     db.captains.update_one(
         {"user_id": oid},
         {"$set": {"location": to_point(lat, lng), "last_seen": utcnow()}},
     )
     updated = db.captains.find_one({"user_id": oid})
+    if updated and updated.get("go_home_mode") and updated.get("home_location"):
+        try:
+            from maps import services as maps_services
+            home_coords = updated.get("home_location", {}).get("coordinates")
+            if home_coords:
+                eta = maps_services.get_eta(
+                    {"lat": lat, "lng": lng},
+                    {"lat": home_coords[1], "lng": home_coords[0]},
+                )
+                db.captains.update_one(
+                    {"user_id": oid},
+                    {"$set": {
+                        "go_home_eta_s": int(eta.get("duration_in_traffic_s") or eta.get("duration_s") or 0),
+                        "go_home_distance_m": int(eta.get("distance_m") or 0),
+                        "go_home_updated_at": utcnow(),
+                    }},
+                )
+        except Exception:
+            pass
     if updated and updated.get("current_job_type"):
         from core import matching_service
         if updated.get("current_job_type") == "ORDER":
@@ -107,8 +154,10 @@ def register_vehicle(user_id: str, vehicle: dict):
     existing = db.captains.find_one({"user_id": oid})
     if not existing:
         existing = ensure_captain_profile(user_id)
+    vehicle_type = vehicle.get("vehicle_type")
     update = {
-        "vehicle_type": vehicle.get("vehicle_type"),
+        "vehicle_type": vehicle_type,
+        "is_ev": bool(is_ev_vehicle(vehicle_type)),
         "vehicle_number": vehicle.get("vehicle_number"),
         "vehicle_brand": vehicle.get("vehicle_brand"),
         "license_number": vehicle.get("license_number"),
@@ -133,6 +182,7 @@ def get_vehicle(user_id: str):
         return None
     return {
         "vehicle_type": captain.get("vehicle_type"),
+        "is_ev": bool(captain.get("is_ev", False)),
         "vehicle_number": captain.get("vehicle_number"),
         "vehicle_brand": captain.get("vehicle_brand"),
         "license_number": captain.get("license_number"),
@@ -142,8 +192,35 @@ def get_vehicle(user_id: str):
     }
 
 
+def enable_go_home(user_id: str, lat: float, lng: float):
+    db = get_db()
+    oid = to_object_id(user_id)
+    if not oid:
+        return None
+    update = {
+        "go_home_mode": True,
+        "home_location": to_point(lat, lng),
+        "go_home_activated_at": utcnow(),
+    }
+    db.captains.update_one({"user_id": oid}, {"$set": update})
+    return db.captains.find_one({"user_id": oid})
+
+
+def disable_go_home(user_id: str):
+    db = get_db()
+    oid = to_object_id(user_id)
+    if not oid:
+        return None
+    db.captains.update_one(
+        {"user_id": oid},
+        {"$set": {"go_home_mode": False, "home_location": None, "go_home_activated_at": None}},
+    )
+    return db.captains.find_one({"user_id": oid})
+
+
 def assign_captain_stub(job_type: str, job_id: str):
     db = get_db()
+    from vehicles import services as vehicle_services
     pipeline = [
         {
             "$match": {
@@ -158,6 +235,10 @@ def assign_captain_stub(job_type: str, job_id: str):
         },
         {"$sample": {"size": 1}},
     ]
+    if job_type == "ORDER":
+        allowed = vehicle_services.get_food_allowed_vehicles()
+        if allowed:
+            pipeline[0]["$match"]["vehicle_type"] = {"$in": allowed}
     candidates = list(db.captains.aggregate(pipeline))
     if not candidates:
         return None

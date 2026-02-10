@@ -9,7 +9,9 @@ from payments import services as payment_services
 from notifications import services as notification_services
 from core import matching_service
 from pricing import services as pricing_services
-from core.vehicles import get_vehicle_rate
+from core.vehicles import get_vehicle_rate, is_ev_vehicle
+from rewards import services as reward_services
+from vehicles import services as vehicle_services
 
 PAYMENT_MODES = {"RAZORPAY", "WALLET", "WALLET_RAZORPAY"}
 
@@ -45,7 +47,15 @@ def calculate_fare(pickup: dict, dropoff: dict, vehicle_type: str):
     return max(distance_km * rate, 0.0)
 
 
-def create_ride(user_id: str, pickup: dict, dropoff: dict, vehicle_type: str, payment_mode: str, wallet_amount: Optional[int]):
+def create_ride(
+    user_id: str,
+    pickup: dict,
+    dropoff: dict,
+    vehicle_type: str,
+    payment_mode: str,
+    wallet_amount: Optional[int],
+    redeem_points: Optional[int] = None,
+):
     mode = normalize_payment_mode(payment_mode)
     if not mode:
         raise ValueError("Invalid payment mode")
@@ -59,21 +69,37 @@ def create_ride(user_id: str, pickup: dict, dropoff: dict, vehicle_type: str, pa
     except Exception:
         surge_multiplier = 1.0
     base_fare = int(round(raw_base_fare))
-    fare = int(round(raw_base_fare * surge_multiplier))
-    surge_amount = max(0, fare - base_fare)
+    total_fare = int(round(raw_base_fare * surge_multiplier))
+    surge_amount = max(0, total_fare - base_fare)
+    is_ev = bool(is_ev_vehicle(vehicle_type))
+    reward_multiplier = vehicle_services.get_ev_reward_percentage() * vehicle_services.get_ev_bonus_multiplier()
+    reward_points_earned = int(total_fare * reward_multiplier) if is_ev else 0
+
+    redeem_points_applied = 0
+    redeem_amount = 0
+    if redeem_points is not None:
+        redeem_points_applied, redeem_amount, _ = reward_services.calculate_redeemable_points(
+            user_id,
+            total_fare,
+            redeem_points,
+        )
+    total_after_rewards = max(0, total_fare - redeem_amount)
     wallet_to_use = 0
     if mode == "WALLET":
-        wallet_to_use = int(wallet_amount or fare)
-        if wallet_to_use < fare:
+        wallet_to_use = int(wallet_amount or total_after_rewards)
+        if wallet_to_use < total_after_rewards:
             raise ValueError("Wallet amount must cover the full fare")
+        if wallet_to_use > total_after_rewards:
+            wallet_to_use = total_after_rewards
     elif mode == "WALLET_RAZORPAY":
         wallet_to_use = int(wallet_amount or 0)
-        if wallet_to_use < 0 or wallet_to_use > fare:
+        if wallet_to_use < 0 or wallet_to_use > total_after_rewards:
             raise ValueError("Invalid wallet amount")
 
-    payment_amount = fare - wallet_to_use
+    payment_amount = total_after_rewards - wallet_to_use
     ride_id = ObjectId()
     wallet_txn = None
+    reward_txn = None
 
     if wallet_to_use > 0:
         wallet_txn = wallet_services.debit_wallet(
@@ -94,12 +120,18 @@ def create_ride(user_id: str, pickup: dict, dropoff: dict, vehicle_type: str, pa
         "dropoff": dropoff,
         "pickup_location": pickup_location,
         "vehicle_type": vehicle_type,
-        "fare": fare,
+        "is_ev": is_ev,
+        "reward_points_earned": reward_points_earned,
+        "rewarded": False,
+        "fare": total_fare,
         "fare_base": base_fare,
         "surge_multiplier": round(surge_multiplier, 2),
         "surge_amount": surge_amount,
         "surge_meta": surge_data,
         "wallet_amount": wallet_to_use,
+        "reward_redeem_amount": redeem_amount,
+        "points_redeemed": redeem_points_applied,
+        "amount_total_before_rewards": total_fare,
         "payment_amount": payment_amount,
         "payment_mode": mode,
         "status": "REQUESTED" if payment_amount == 0 else "PENDING_PAYMENT",
@@ -115,6 +147,16 @@ def create_ride(user_id: str, pickup: dict, dropoff: dict, vehicle_type: str, pa
     db = get_db()
     try:
         db.rides.insert_one(ride_doc)
+
+        if redeem_points_applied > 0:
+            reward_txn = reward_services.redeem_reward_points(
+                user_id,
+                redeem_points_applied,
+                related_order=str(ride_id),
+            )
+            if not reward_txn:
+                raise ValueError("Insufficient reward points")
+
         razorpay_order = None
         if payment_amount > 0 and mode in {"RAZORPAY", "WALLET_RAZORPAY"}:
             razorpay_order = payment_services.create_razorpay_order(
@@ -153,6 +195,13 @@ def create_ride(user_id: str, pickup: dict, dropoff: dict, vehicle_type: str, pa
                 "RIDE",
                 reference=str(ride_id),
             )
+        if reward_txn:
+            reward_services.credit_reward_points(
+                user_id,
+                redeem_points_applied,
+                "RIDE_REFUND",
+                related_order=str(ride_id),
+            )
         raise exc
 
 
@@ -184,5 +233,31 @@ def complete_ride(ride_id: str):
     oid = to_object_id(ride_id)
     if not oid:
         return None
+    ride_doc = db.rides.find_one({"_id": oid})
+    if not ride_doc:
+        return None
     db.rides.update_one({"_id": oid}, {"$set": {"status": "COMPLETED"}})
+    if (
+        ride_doc.get("is_ev")
+        and not ride_doc.get("rewarded")
+        and int(ride_doc.get("reward_points_earned") or 0) > 0
+        and (ride_doc.get("is_paid") or ride_doc.get("payment_mode") == "COD")
+    ):
+        txn = reward_services.credit_reward_points(
+            str(ride_doc.get("user_id")),
+            int(ride_doc.get("reward_points_earned") or 0),
+            reward_services.REWARD_SOURCE_EV_RIDE,
+            related_order=str(ride_id),
+        )
+        db.rides.update_one({"_id": oid}, {"$set": {"rewarded": True}})
+        if txn:
+            try:
+                notification_services.send_to_user(
+                    str(ride_doc.get("user_id")),
+                    "EV Rewards earned",
+                    f"You earned {int(ride_doc.get('reward_points_earned') or 0)} reward points on your EV ride.",
+                    {"ride_id": str(ride_id)},
+                )
+            except Exception:
+                pass
     return db.rides.find_one({"_id": oid})

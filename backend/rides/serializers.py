@@ -25,6 +25,7 @@ class CreateRideSerializer(serializers.Serializer):
     vehicle_type = serializers.CharField()
     payment_mode = serializers.CharField()
     wallet_amount = serializers.IntegerField(required=False, min_value=0)
+    redeem_points = serializers.IntegerField(required=False, min_value=0)
 
     def validate_vehicle_type(self, value):
         normalized = normalize_vehicle_type(value)

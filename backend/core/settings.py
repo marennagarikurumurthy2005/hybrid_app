@@ -52,6 +52,15 @@ INSTALLED_APPS = [
     'routing',
     'analytics',
     'maps',
+    'cancellation',
+    'chat',
+    'promotions',
+    'payouts',
+    'restaurant_ops',
+    'trust',
+    'eta',
+    'growth',
+    'vehicles',
 ]
 
 MIDDLEWARE = [
@@ -181,3 +190,15 @@ DISPATCH_DISTANCE_WEIGHT = float(os.getenv("DISPATCH_DISTANCE_WEIGHT", "1.0"))
 WEATHER_FACTOR = float(os.getenv("WEATHER_FACTOR", "1.0"))
 GOOGLE_MAPS_KEY = os.getenv("GOOGLE_MAPS_KEY")
 MAPS_CACHE_TTL_MIN = int(os.getenv("MAPS_CACHE_TTL_MIN", "30"))
+EV_REWARD_PERCENTAGE = float(os.getenv("EV_REWARD_PERCENTAGE", "0.10"))
+EV_BONUS_MULTIPLIER = float(os.getenv("EV_BONUS_MULTIPLIER", "1.0"))
+FOOD_ALLOWED_VEHICLES = [
+    v.strip().upper()
+    for v in os.getenv("FOOD_ALLOWED_VEHICLES", "BIKE_PETROL,BIKE_EV").split(",")
+    if v.strip()
+]
+CHAT_ABUSE_WORDS = [w.strip() for w in os.getenv("CHAT_ABUSE_WORDS", "abuse,spam").split(",") if w.strip()]
+NOTIFICATION_MAX_RETRIES = int(os.getenv("NOTIFICATION_MAX_RETRIES", "3"))
+GO_HOME_ROUTE_BUFFER_KM = float(os.getenv("GO_HOME_ROUTE_BUFFER_KM", "1.0"))
+GO_HOME_ETA_BUFFER_MIN = int(os.getenv("GO_HOME_ETA_BUFFER_MIN", "10"))
+GO_HOME_MAX_SPEED_KMPH = float(os.getenv("GO_HOME_MAX_SPEED_KMPH", "200"))

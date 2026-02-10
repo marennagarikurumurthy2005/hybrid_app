@@ -19,8 +19,10 @@ from core.redis_queue import (
     is_ws_online,
 )
 from core.utils import utcnow, to_object_id
+from vehicles import services as vehicle_services
 from notifications import services as notification_services
 from pricing import services as pricing_services
+from core.route_utils import distance_point_to_polyline_km, decode_polyline
 
 
 def _job_collection(job_type: str):
@@ -97,10 +99,71 @@ def _dispatch_score(captain: dict, pickup_location: dict, surge_multiplier: floa
     return score
 
 
+def _go_home_metrics(captain: dict, pickup_location: dict, job_doc: dict):
+    if not captain.get("go_home_mode"):
+        return None
+    coords = captain.get("location", {}).get("coordinates")
+    home_coords = captain.get("home_location", {}).get("coordinates")
+    if not coords or not home_coords:
+        return None
+    origin = {"lat": coords[1], "lng": coords[0]}
+    home = {"lat": home_coords[1], "lng": home_coords[0]}
+    job = {"lat": pickup_location["coordinates"][1], "lng": pickup_location["coordinates"][0]}
+
+    baseline_eta_s = None
+    job_eta_s = None
+    route_distance_km = None
+    try:
+        from maps import services as maps_services
+        baseline_eta = maps_services.get_eta(origin, home)
+        baseline_eta_s = int(baseline_eta.get("duration_in_traffic_s") or baseline_eta.get("duration_s") or 0)
+        leg1 = maps_services.get_eta(origin, job)
+        leg2 = maps_services.get_eta(job, home)
+        job_eta_s = int((leg1.get("duration_in_traffic_s") or leg1.get("duration_s") or 0) + (leg2.get("duration_in_traffic_s") or leg2.get("duration_s") or 0))
+        route = maps_services.get_route(origin, home)
+        points = route.get("points")
+        if not points and route.get("polyline"):
+            points = decode_polyline(route.get("polyline"))
+        if points:
+            route_distance_km = distance_point_to_polyline_km(job, points)
+    except Exception:
+        baseline_eta_s = None
+        job_eta_s = None
+
+    if baseline_eta_s is None or job_eta_s is None:
+        baseline_km = _haversine_km(origin["lat"], origin["lng"], home["lat"], home["lng"])
+        job_km = _haversine_km(origin["lat"], origin["lng"], job["lat"], job["lng"]) + _haversine_km(job["lat"], job["lng"], home["lat"], home["lng"])
+        avg_kmph = 30.0
+        baseline_eta_s = int((baseline_km / avg_kmph) * 3600)
+        job_eta_s = int((job_km / avg_kmph) * 3600)
+        route_distance_km = _haversine_km(job["lat"], job["lng"], home["lat"], home["lng"])
+
+    buffer_s = settings.GO_HOME_ETA_BUFFER_MIN * 60
+    eta_ok = job_eta_s <= baseline_eta_s + buffer_s
+    route_ok = route_distance_km is not None and route_distance_km <= settings.GO_HOME_ROUTE_BUFFER_KM
+    payout = int(job_doc.get("payment_amount") or job_doc.get("fare") or 0)
+    eta_gain = baseline_eta_s - job_eta_s
+    return {
+        "allowed": eta_ok or route_ok,
+        "baseline_eta_s": baseline_eta_s,
+        "job_eta_s": job_eta_s,
+        "route_distance_km": route_distance_km,
+        "eta_gain_s": eta_gain,
+        "payout": payout,
+    }
+
+
 def _rank_captains(captains: list, pickup_location: dict, surge_multiplier: float):
     scored = []
     for captain in captains:
-        scored.append((captain, _dispatch_score(captain, pickup_location, surge_multiplier)))
+        base_score = _dispatch_score(captain, pickup_location, surge_multiplier)
+        metrics = captain.get("_go_home_metrics")
+        if metrics:
+            route_distance = float(metrics.get("route_distance_km") or 0)
+            eta_gain = float(metrics.get("eta_gain_s") or 0)
+            payout = float(metrics.get("payout") or 0)
+            base_score = base_score + route_distance * 1.5 - eta_gain / 600.0 - payout / 100000.0
+        scored.append((captain, base_score))
     scored.sort(key=lambda item: item[1])
     return [captain for captain, _ in scored]
 
@@ -108,7 +171,8 @@ def _rank_captains(captains: list, pickup_location: dict, surge_multiplier: floa
 def _try_batch_order(job_doc: dict, pickup_location: dict):
     db = get_db()
     radius = min(settings.CAPTAIN_MATCH_RADIUS_M, 2000)
-    cursor = db.captains.find({
+    allowed = vehicle_services.get_food_allowed_vehicles()
+    query = {
         "is_online": True,
         "is_verified": True,
         "is_busy": True,
@@ -119,7 +183,10 @@ def _try_batch_order(job_doc: dict, pickup_location: dict):
                 "$maxDistance": radius,
             }
         },
-    }).limit(10)
+    }
+    if allowed:
+        query["vehicle_type"] = {"$in": allowed}
+    cursor = db.captains.find(query).limit(10)
 
     for captain in cursor:
         batched = captain.get("batched_order_ids") or []
@@ -183,7 +250,13 @@ def _log_matching_decision(job_type: str, job_id: str, candidate_ids: list, eta_
     })
 
 
-def find_nearby_captains(pickup_location: dict, radius_m: Optional[int] = None, limit: Optional[int] = None, vehicle_type: Optional[str] = None):
+def find_nearby_captains(
+    pickup_location: dict,
+    radius_m: Optional[int] = None,
+    limit: Optional[int] = None,
+    vehicle_type: Optional[str] = None,
+    allowed_vehicle_types: Optional[list] = None,
+):
     ensure_captain_geo_index()
     db = get_db()
     radius = radius_m or settings.CAPTAIN_MATCH_RADIUS_M
@@ -201,6 +274,8 @@ def find_nearby_captains(pickup_location: dict, radius_m: Optional[int] = None, 
     }
     if vehicle_type:
         query["vehicle_type"] = vehicle_type
+    if allowed_vehicle_types:
+        query["vehicle_type"] = {"$in": allowed_vehicle_types}
     cursor = db.captains.find(query).limit(max_limit)
     return list(cursor)
 
@@ -237,9 +312,23 @@ def create_job(job_type: str, job_id: str):
     except Exception:
         surge_multiplier = 1.0
 
-    vehicle_type = job_doc.get("vehicle_type")
-    captains = find_nearby_captains(pickup_location, vehicle_type=vehicle_type)
-    ranked = _rank_captains(captains, pickup_location, surge_multiplier)
+    if job_type == "ORDER":
+        allowed = vehicle_services.get_food_allowed_vehicles()
+        captains = find_nearby_captains(pickup_location, allowed_vehicle_types=allowed)
+    else:
+        vehicle_type = job_doc.get("vehicle_type")
+        captains = find_nearby_captains(pickup_location, vehicle_type=vehicle_type)
+
+    filtered = []
+    for captain in captains:
+        if captain.get("go_home_mode") and captain.get("home_location"):
+            metrics = _go_home_metrics(captain, pickup_location, job_doc)
+            if not metrics or not metrics.get("allowed"):
+                continue
+            captain["_go_home_metrics"] = metrics
+        filtered.append(captain)
+
+    ranked = _rank_captains(filtered, pickup_location, surge_multiplier)
     eta_map = {}
     try:
         from maps import services as maps_services
@@ -304,14 +393,21 @@ def offer_next_captain(job_type: str, job_id: str):
         }, "$inc": {"job_attempts": 1}},
     )
 
+    db = get_db()
+    go_home_job = False
+    try:
+        captain_doc = db.captains.find_one({"user_id": to_object_id(candidate_id)})
+        go_home_job = bool(captain_doc.get("go_home_mode")) if captain_doc else False
+    except Exception:
+        go_home_job = False
     payload = {
         "job_id": job_id,
         "job_type": job_type,
         "expires_at": expires_at.isoformat(),
+        "go_home_job": go_home_job,
     }
     _send_ws(f"captain_{candidate_id}", "job_offer", payload)
 
-    db = get_db()
     db.matching_logs.insert_one({
         "job_type": job_type,
         "job_id": to_object_id(job_id),
@@ -384,9 +480,14 @@ def accept_job(job_type: str, job_id: str, captain_id: str):
         raise ValueError("Job not offered to this captain")
 
     captain_query = {"user_id": captain_oid, "is_online": True, "is_busy": False, "is_verified": True}
-    job_vehicle_type = job_doc.get("vehicle_type")
-    if job_vehicle_type:
-        captain_query["vehicle_type"] = job_vehicle_type
+    if job_type == "ORDER":
+        allowed = vehicle_services.get_food_allowed_vehicles()
+        if allowed:
+            captain_query["vehicle_type"] = {"$in": allowed}
+    else:
+        job_vehicle_type = job_doc.get("vehicle_type")
+        if job_vehicle_type:
+            captain_query["vehicle_type"] = job_vehicle_type
     captain = db.captains.find_one_and_update(
         captain_query,
         {"$set": {

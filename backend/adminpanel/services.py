@@ -60,6 +60,12 @@ def list_captains(limit: int = 50, skip: int = 0):
     return list(cursor)
 
 
+def list_go_home_captains(limit: int = 100):
+    db = get_db()
+    cursor = db.captains.find({"go_home_mode": True}).limit(limit)
+    return list(cursor)
+
+
 def verify_captain(captain_id: str, is_verified: bool, reason: str = None):
     db = get_db()
     oid = to_object_id(captain_id)

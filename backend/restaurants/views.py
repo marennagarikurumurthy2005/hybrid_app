@@ -58,3 +58,21 @@ class ListMenuView(APIView):
     def get(self, request, restaurant_id: str):
         items = services.list_menu_items(restaurant_id)
         return Response({"items": serialize_doc(items)})
+
+
+class RecommendedRestaurantsView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        limit = int(request.query_params.get("limit", 50))
+        restaurants = services.list_recommended_restaurants(limit=limit)
+        return Response({"restaurants": serialize_doc(restaurants)})
+
+
+class RecommendedMenuItemsView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        limit = int(request.query_params.get("limit", 50))
+        items = services.list_recommended_menu_items(limit=limit)
+        return Response({"items": serialize_doc(items)})

@@ -7,6 +7,7 @@ from pymongo import ASCENDING
 from core.db import get_db
 from core.geo_utils import ensure_captain_geo_index, to_point
 from core.utils import utcnow
+from vehicles import services as vehicle_services
 
 _index_ready = False
 
@@ -52,17 +53,22 @@ def _count_demand(job_type: str, location: dict, radius_m: int):
     return 0
 
 
-def _count_supply(location: dict, radius_m: int):
+def _count_supply(job_type: str, location: dict, radius_m: int):
     ensure_captain_geo_index()
     db = get_db()
-    return db.captains.count_documents({
+    query = {
         "is_online": True,
         "is_verified": True,
         "is_busy": {"$ne": True},
         "location": {
             "$near": {"$geometry": location, "$maxDistance": radius_m}
         },
-    })
+    }
+    if job_type == "ORDER":
+        allowed = vehicle_services.get_food_allowed_vehicles()
+        if allowed:
+            query["vehicle_type"] = {"$in": allowed}
+    return db.captains.count_documents(query)
 
 
 def calculate_surge(job_type: str, lat: float, lng: float, store_history: bool = True):
@@ -70,7 +76,7 @@ def calculate_surge(job_type: str, lat: float, lng: float, store_history: bool =
     location = to_point(lat, lng)
     radius = settings.CAPTAIN_MATCH_RADIUS_M
     demand = _count_demand(job_type, location, radius)
-    supply = _count_supply(location, radius)
+    supply = _count_supply(job_type, location, radius)
     ratio = float(demand) / max(float(supply), 1.0)
 
     time_factor = _time_factor()

@@ -56,3 +56,22 @@ def verify_razorpay_signature(razorpay_order_id: str, razorpay_payment_id: str, 
         upsert=True,
     )
     return True
+
+
+def refund_razorpay_payment(razorpay_payment_id: str, amount: int):
+    if not razorpay_payment_id:
+        raise ValueError("Invalid payment id")
+    client = get_client()
+    refund = client.payment.refund(razorpay_payment_id, {"amount": int(amount)})
+    db = get_db()
+    db.payment_transactions.update_one(
+        {"razorpay_payment_id": razorpay_payment_id},
+        {"$set": {
+            "refund_id": refund.get("id"),
+            "refund_amount": int(amount),
+            "refund_status": refund.get("status"),
+            "refunded_at": utcnow(),
+        }},
+        upsert=True,
+    )
+    return refund

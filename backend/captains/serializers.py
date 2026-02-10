@@ -12,6 +12,21 @@ class LocationSerializer(serializers.Serializer):
     lng = serializers.FloatField()
 
 
+class GoHomeEnableSerializer(serializers.Serializer):
+    lat = serializers.FloatField()
+    lng = serializers.FloatField()
+
+    def validate_lat(self, value):
+        if value < -90 or value > 90:
+            raise serializers.ValidationError("Invalid latitude")
+        return value
+
+    def validate_lng(self, value):
+        if value < -180 or value > 180:
+            raise serializers.ValidationError("Invalid longitude")
+        return value
+
+
 class JobSerializer(serializers.Serializer):
     job_type = serializers.ChoiceField(choices=["ORDER", "RIDE"])
     job_id = serializers.CharField()

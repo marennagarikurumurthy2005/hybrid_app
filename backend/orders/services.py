@@ -8,7 +8,6 @@ from notifications import services as notification_services
 from core import matching_service
 from pricing import services as pricing_services
 from rewards import services as reward_services
-from recommendations import services as recommendation_services
 
 PAYMENT_MODES = {"RAZORPAY", "COD", "WALLET", "WALLET_RAZORPAY"}
 
@@ -64,6 +63,37 @@ def calculate_food_totals(restaurant_id: str, items: List[Dict]):
     return normalized_items, subtotal
 
 
+def calculate_recommended_reward_points(restaurant_id: str, order_items: List[Dict], surge_multiplier: float):
+    if not order_items:
+        return 0
+    db = get_db()
+    rid = to_object_id(restaurant_id)
+    if not rid:
+        return 0
+    restaurant = db.restaurants.find_one({"_id": rid, "is_active": True})
+    if not restaurant:
+        return 0
+    if restaurant.get("is_recommended"):
+        base_total = sum(int(item.get("total", 0)) for item in order_items)
+    else:
+        item_ids = [item.get("menu_item_id") for item in order_items if item.get("menu_item_id")]
+        if not item_ids:
+            return 0
+        rec_items = list(db.menu_items.find({"_id": {"$in": item_ids}, "is_recommended": True}))
+        rec_ids = {item.get("_id") for item in rec_items}
+        if not rec_ids:
+            return 0
+        base_total = sum(
+            int(item.get("total", 0))
+            for item in order_items
+            if item.get("menu_item_id") in rec_ids
+        )
+    if base_total <= 0:
+        return 0
+    adjusted_total = int(round(base_total * float(surge_multiplier or 1.0)))
+    return int(adjusted_total // reward_services.REWARD_POINT_VALUE_PAISE)
+
+
 def create_order(
     user_id: str,
     restaurant_id: str,
@@ -100,6 +130,7 @@ def create_order(
     if not mode:
         raise ValueError("Invalid payment mode")
 
+    reward_points_earned = calculate_recommended_reward_points(restaurant_id, order_items, surge_multiplier)
     redeem_points_applied = 0
     redeem_amount = 0
     if redeem_points is not None:
@@ -155,6 +186,7 @@ def create_order(
         "wallet_amount": wallet_to_use,
         "reward_redeem_amount": redeem_amount,
         "points_redeemed": redeem_points_applied,
+        "reward_points_earned": reward_points_earned,
         "points_earned": 0,
         "payment_amount": payment_amount,
         "is_paid": payment_amount == 0,
@@ -223,6 +255,8 @@ def create_order(
                 {"$set": {"job_status": "NO_LOCATION"}},
             )
 
+        if payment_amount == 0 and mode != "COD":
+            award_food_points(str(order_id))
         order_doc = db.orders.find_one({"_id": order_id})
         return order_doc, order_items, razorpay_order
     except Exception as exc:
@@ -265,6 +299,7 @@ def verify_order_payment(order_id: str, razorpay_order_id: str, razorpay_payment
     )
     if result.matched_count == 0:
         raise ValueError("Order not found")
+    award_food_points(order_id)
     return db.orders.find_one({"_id": oid})
 
 
@@ -278,19 +313,14 @@ def award_food_points(order_id: str):
         return None
     if not order_doc.get("is_paid") and order_doc.get("payment_mode") != "COD":
         return None
-
-    order_items = list(db.order_items.find({"order_id": oid}))
-    points = recommendation_services.calculate_recommendation_points(
-        str(order_doc.get("restaurant_id")),
-        order_items,
-    )
+    points = int(order_doc.get("reward_points_earned") or 0)
     if points <= 0:
         db.orders.update_one({"_id": oid}, {"$set": {"rewarded": True, "points_earned": 0}})
         return None
     txn = reward_services.credit_reward_points(
         str(order_doc.get("user_id")),
         points,
-        reward_services.REWARD_SOURCE_RECOMMENDATION,
+        reward_services.REWARD_SOURCE_ADMIN_RECOMMENDATION,
         related_order=str(order_id),
     )
     db.orders.update_one({"_id": oid}, {"$set": {"rewarded": True, "points_earned": points}})

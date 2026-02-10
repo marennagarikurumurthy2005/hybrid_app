@@ -34,6 +34,7 @@ class RideFareView(APIView):
         base_fare = int(round(raw_base_fare))
         total_fare = base_fare
         surge_amount = 0
+        reward_preview = 0
         try:
             surge_data = pricing_services.calculate_surge(
                 "RIDE",
@@ -46,11 +47,17 @@ class RideFareView(APIView):
             surge_amount = max(0, total_fare - base_fare)
         except Exception:
             pass
+        from core.vehicles import is_ev_vehicle
+        from vehicles import services as vehicle_services
+        if is_ev_vehicle(serializer.validated_data["vehicle_type"]):
+            reward_multiplier = vehicle_services.get_ev_reward_percentage() * vehicle_services.get_ev_bonus_multiplier()
+            reward_preview = int(total_fare * reward_multiplier)
         return Response({
             "fare_base": base_fare,
             "surge_multiplier": round(surge_multiplier, 2),
             "surge_amount": surge_amount,
             "fare_total": total_fare,
+            "reward_points_preview": reward_preview,
         })
 
 
@@ -66,7 +73,8 @@ class RideCreateView(APIView):
     #   "dropoff_lng": 77.61,
     #   "vehicle_type": "BIKE",
     #   "payment_mode": "WALLET + RAZORPAY",
-    #   "wallet_amount": 2000
+    #   "wallet_amount": 2000,
+    #   "redeem_points": 150
     # }
     def post(self, request):
         serializer = CreateRideSerializer(data=request.data)
@@ -79,6 +87,7 @@ class RideCreateView(APIView):
                 vehicle_type=serializer.validated_data["vehicle_type"],
                 payment_mode=serializer.validated_data["payment_mode"],
                 wallet_amount=serializer.validated_data.get("wallet_amount"),
+                redeem_points=serializer.validated_data.get("redeem_points"),
             )
         except ValueError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)

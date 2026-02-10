@@ -6,6 +6,8 @@ from core.utils import utcnow, to_object_id
 
 REWARD_POINT_VALUE_PAISE = 100
 REWARD_SOURCE_RECOMMENDATION = "RECOMMENDATION"
+REWARD_SOURCE_ADMIN_RECOMMENDATION = "ADMIN_RECOMMENDATION"
+REWARD_SOURCE_EV_RIDE = "EV_RIDE"
 
 _index_ready = False
 
@@ -28,7 +30,11 @@ def get_reward_balance(user_id: str) -> int:
     if not oid:
         return 0
     user_doc = db.users.find_one({"_id": oid})
-    return int(user_doc.get("reward_balance", 0)) if user_doc else 0
+    if not user_doc:
+        return 0
+    if "reward_points" in user_doc:
+        return int(user_doc.get("reward_points", 0))
+    return int(user_doc.get("reward_balance", 0))
 
 
 def calculate_redeemable_points(user_id: str, total_amount_paise: int, requested_points: Optional[int]):
@@ -36,10 +42,8 @@ def calculate_redeemable_points(user_id: str, total_amount_paise: int, requested
     if requested <= 0:
         return 0, 0, get_reward_balance(user_id)
     available = get_reward_balance(user_id)
-    if requested > available:
-        raise ValueError("Insufficient reward points")
     max_points = int(total_amount_paise) // REWARD_POINT_VALUE_PAISE
-    points_to_redeem = min(requested, max_points)
+    points_to_redeem = min(requested, available, max_points)
     redeem_amount = points_to_redeem * REWARD_POINT_VALUE_PAISE
     return points_to_redeem, redeem_amount, available
 
@@ -54,7 +58,7 @@ def credit_reward_points(user_id: str, points: int, source: str, related_order: 
         return None
     user_doc = db.users.find_one_and_update(
         {"_id": oid},
-        {"$inc": {"reward_balance": int(points)}},
+        {"$inc": {"reward_points": int(points), "reward_balance": int(points)}},
         return_document=ReturnDocument.AFTER,
     )
     if not user_doc:
@@ -70,7 +74,7 @@ def credit_reward_points(user_id: str, points: int, source: str, related_order: 
     }
     result = db.user_rewards.insert_one(doc)
     doc["_id"] = result.inserted_id
-    doc["balance_after"] = user_doc.get("reward_balance", 0)
+    doc["balance_after"] = int(user_doc.get("reward_points", user_doc.get("reward_balance", 0)))
     return doc
 
 
@@ -83,8 +87,14 @@ def redeem_reward_points(user_id: str, points: int, related_order: Optional[str]
     if not oid:
         return None
     user_doc = db.users.find_one_and_update(
-        {"_id": oid, "reward_balance": {"$gte": int(points)}},
-        {"$inc": {"reward_balance": -int(points)}},
+        {
+            "_id": oid,
+            "$or": [
+                {"reward_points": {"$gte": int(points)}},
+                {"reward_points": {"$exists": False}, "reward_balance": {"$gte": int(points)}},
+            ],
+        },
+        {"$inc": {"reward_points": -int(points), "reward_balance": -int(points)}},
         return_document=ReturnDocument.AFTER,
     )
     if not user_doc:
@@ -118,6 +128,6 @@ def redeem_reward_points(user_id: str, points: int, related_order: Optional[str]
 
     return {
         "points_redeemed": int(points),
-        "balance_after": user_doc.get("reward_balance", 0),
+        "balance_after": int(user_doc.get("reward_points", user_doc.get("reward_balance", 0))),
         "related_order": related_order,
     }

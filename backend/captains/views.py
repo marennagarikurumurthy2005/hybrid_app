@@ -12,6 +12,7 @@ from captains.serializers import (
     JobCreateSerializer,
     JobDecisionSerializer,
     VehicleRegisterSerializer,
+    GoHomeEnableSerializer,
 )
 from captains import services
 from core import matching_service
@@ -201,3 +202,33 @@ class CaptainVehicleMeView(APIView):
         if not vehicle:
             return Response({"detail": "Captain not found"}, status=status.HTTP_404_NOT_FOUND)
         return Response({"vehicle": serialize_doc(vehicle)})
+
+
+class CaptainGoHomeEnableView(APIView):
+    allowed_roles = ["CAPTAIN"]
+    permission_classes = [IsAuthenticated, RolePermission]
+
+    # Sample payload:
+    # {"lat": 17.385044, "lng": 78.486671}
+    def post(self, request):
+        serializer = GoHomeEnableSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        updated = services.enable_go_home(
+            request.user.id,
+            serializer.validated_data["lat"],
+            serializer.validated_data["lng"],
+        )
+        if not updated:
+            return Response({"detail": "Captain not found"}, status=status.HTTP_404_NOT_FOUND)
+        return Response({"captain": serialize_doc(updated)})
+
+
+class CaptainGoHomeDisableView(APIView):
+    allowed_roles = ["CAPTAIN"]
+    permission_classes = [IsAuthenticated, RolePermission]
+
+    def post(self, request):
+        updated = services.disable_go_home(request.user.id)
+        if not updated:
+            return Response({"detail": "Captain not found"}, status=status.HTTP_404_NOT_FOUND)
+        return Response({"captain": serialize_doc(updated)})
