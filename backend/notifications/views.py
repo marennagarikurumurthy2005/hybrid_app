@@ -61,3 +61,15 @@ class NotificationHistoryView(APIView):
         limit = int(request.query_params.get("limit", 50))
         notifications = services.list_notifications(limit=limit)
         return Response({"notifications": serialize_doc(notifications)})
+
+
+class NotificationRetryView(APIView):
+    allowed_roles = ["ADMIN"]
+    permission_classes = [IsAuthenticated, RolePermission]
+
+    # Sample: POST /api/v1/notify/retry/<notification_id>
+    def post(self, request, notification_id: str):
+        ok = services.queue_notification_id(notification_id)
+        if not ok:
+            return Response({"detail": "Notification not found"}, status=status.HTTP_404_NOT_FOUND)
+        return Response({"queued": True})

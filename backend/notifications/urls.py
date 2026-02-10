@@ -5,4 +5,5 @@ urlpatterns = [
     path("notify/send", views.SendNotificationView.as_view(), name="notify-send"),
     path("notify/schedule", views.ScheduleNotificationView.as_view(), name="notify-schedule"),
     path("notify/history", views.NotificationHistoryView.as_view(), name="notify-history"),
+    path("notify/retry/<str:notification_id>", views.NotificationRetryView.as_view(), name="notify-retry"),
 ]

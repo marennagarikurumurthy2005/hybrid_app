@@ -4,7 +4,7 @@ from rest_framework.permissions import IsAuthenticated
 
 from core.permissions import RolePermission
 from core.utils import serialize_doc
-from chat.serializers import ChatHistorySerializer
+from chat.serializers import ChatHistorySerializer, ChatReadSerializer, ChatTypingSerializer
 from chat import services
 
 
@@ -36,3 +36,39 @@ class ChatMaskedCallView(APIView):
             return Response({"detail": "Not allowed"}, status=403)
         data = services.get_masked_numbers(room_id, request.user.id, callee_id)
         return Response({"call": data})
+
+
+class ChatReadView(APIView):
+    allowed_roles = ["USER", "CAPTAIN", "RESTAURANT", "ADMIN"]
+    permission_classes = [IsAuthenticated, RolePermission]
+
+    # Sample payload:
+    # {"room_id": "<room_id>", "message_id": "<message_id>"}
+    def post(self, request):
+        serializer = ChatReadSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        room_id = serializer.validated_data["room_id"]
+        if not services.is_participant(room_id, request.user.id, getattr(request.user, "role", None)):
+            return Response({"detail": "Not allowed"}, status=403)
+        receipt = services.mark_read(
+            room_id,
+            request.user.id,
+            serializer.validated_data.get("message_id"),
+        )
+        return Response({"read": serialize_doc(receipt)})
+
+
+class ChatTypingView(APIView):
+    allowed_roles = ["USER", "CAPTAIN", "RESTAURANT", "ADMIN"]
+    permission_classes = [IsAuthenticated, RolePermission]
+
+    # Sample payload:
+    # {"room_id": "<room_id>", "is_typing": true}
+    def post(self, request):
+        serializer = ChatTypingSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        room_id = serializer.validated_data["room_id"]
+        if not services.is_participant(room_id, request.user.id, getattr(request.user, "role", None)):
+            return Response({"detail": "Not allowed"}, status=403)
+        event = services.record_typing(room_id, request.user.id, serializer.validated_data["is_typing"])
+        return Response({"typing": serialize_doc(event)})

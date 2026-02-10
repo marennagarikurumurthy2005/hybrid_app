@@ -8,6 +8,7 @@ from notifications import services as notification_services
 from core import matching_service
 from pricing import services as pricing_services
 from rewards import services as reward_services
+from orders import state_machine as order_state
 
 PAYMENT_MODES = {"RAZORPAY", "COD", "WALLET", "WALLET_RAZORPAY"}
 
@@ -258,9 +259,13 @@ def create_order(
         if payment_amount == 0 and mode != "COD":
             award_food_points(str(order_id))
         order_doc = db.orders.find_one({"_id": order_id})
+        order_doc = order_state.ensure_order_sla(order_doc) or order_doc
         return order_doc, order_items, razorpay_order
     except Exception as exc:
-        db.orders.update_one({"_id": order_id}, {"$set": {"status": "FAILED"}})
+        try:
+            order_state.set_order_status(str(order_id), "FAILED", reason="CREATE_FAILED")
+        except Exception:
+            db.orders.update_one({"_id": order_id}, {"$set": {"status": "FAILED"}})
         if wallet_txn:
             wallet_services.refund_wallet(
                 user_id,
@@ -287,17 +292,17 @@ def verify_order_payment(order_id: str, razorpay_order_id: str, razorpay_payment
 
     payment_services.verify_razorpay_signature(razorpay_order_id, razorpay_payment_id, razorpay_signature)
 
-    result = db.orders.update_one(
+    db.orders.update_one(
         {"_id": oid},
         {"$set": {
             "razorpay_order_id": razorpay_order_id,
             "razorpay_payment_id": razorpay_payment_id,
             "razorpay_signature": razorpay_signature,
             "is_paid": True,
-            "status": "PLACED",
         }},
     )
-    if result.matched_count == 0:
+    updated = order_state.set_order_status(order_id, "PLACED", reason="PAYMENT_VERIFIED")
+    if not updated:
         raise ValueError("Order not found")
     award_food_points(order_id)
     return db.orders.find_one({"_id": oid})
@@ -335,3 +340,29 @@ def award_food_points(order_id: str):
         except Exception:
             pass
     return txn
+
+
+def reorder(order_id: str, user_id: str, payment_mode: str, wallet_amount: Optional[int], redeem_points: Optional[int] = None):
+    db = get_db()
+    oid = to_object_id(order_id)
+    uid = to_object_id(user_id)
+    if not oid or not uid:
+        raise ValueError("Invalid order id")
+    order = db.orders.find_one({"_id": oid, "user_id": uid})
+    if not order:
+        raise ValueError("Order not found")
+    items = list(db.order_items.find({"order_id": oid}))
+    if not items:
+        raise ValueError("Order items not found")
+    normalized_items = [
+        {"menu_item_id": str(item.get("menu_item_id")), "quantity": int(item.get("quantity", 1))}
+        for item in items
+    ]
+    return create_order(
+        user_id=user_id,
+        restaurant_id=str(order.get("restaurant_id")),
+        items=normalized_items,
+        payment_mode=payment_mode,
+        wallet_amount=wallet_amount,
+        redeem_points=redeem_points,
+    )

@@ -5,7 +5,7 @@ from rest_framework.permissions import IsAuthenticated
 
 from core.permissions import RolePermission
 from core.utils import serialize_doc
-from rides.serializers import FareSerializer, CreateRideSerializer, VerifyRidePaymentSerializer, RideCompleteSerializer
+from rides.serializers import FareSerializer, CreateRideSerializer, VerifyRidePaymentSerializer, RideCompleteSerializer, ScheduleRideSerializer
 from rides import services
 from pricing import services as pricing_services
 
@@ -129,3 +129,32 @@ class RideCompleteView(APIView):
         if not ride:
             return Response({"detail": "Ride not found"}, status=status.HTTP_404_NOT_FOUND)
         return Response({"ride": serialize_doc(ride)})
+
+
+class RideScheduleView(APIView):
+    allowed_roles = ["USER"]
+    permission_classes = [IsAuthenticated, RolePermission]
+
+    # Sample payload:
+    # {
+    #   "pickup_lat": 12.97,
+    #   "pickup_lng": 77.59,
+    #   "dropoff_lat": 12.93,
+    #   "dropoff_lng": 77.61,
+    #   "vehicle_type": "BIKE",
+    #   "scheduled_for": "2026-02-11T09:00:00Z"
+    # }
+    def post(self, request):
+        serializer = ScheduleRideSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        ride = services.schedule_ride(
+            request.user.id,
+            pickup={"lat": serializer.validated_data["pickup_lat"], "lng": serializer.validated_data["pickup_lng"]},
+            dropoff={"lat": serializer.validated_data["dropoff_lat"], "lng": serializer.validated_data["dropoff_lng"]},
+            vehicle_type=serializer.validated_data["vehicle_type"],
+            scheduled_for=serializer.validated_data["scheduled_for"],
+            payment_mode=serializer.validated_data.get("payment_mode"),
+            wallet_amount=serializer.validated_data.get("wallet_amount"),
+            redeem_points=serializer.validated_data.get("redeem_points"),
+        )
+        return Response({"ride": serialize_doc(ride)}, status=status.HTTP_201_CREATED)

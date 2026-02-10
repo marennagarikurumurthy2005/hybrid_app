@@ -11,3 +11,8 @@ class DeviceRegisterSerializer(serializers.Serializer):
 
 class TrustScanSerializer(serializers.Serializer):
     user_id = serializers.CharField(required=False, allow_blank=True)
+
+
+class RiskScoreSerializer(serializers.Serializer):
+    user_id = serializers.CharField()
+    device_id = serializers.CharField(required=False, allow_blank=True)

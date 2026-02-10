@@ -61,12 +61,17 @@ INSTALLED_APPS = [
     'eta',
     'growth',
     'vehicles',
+    'support',
+    'observability',
 ]
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
+    'core.middleware.RateLimitMiddleware',
+    'core.middleware.IdempotencyKeyMiddleware',
+    'core.middleware.PrometheusMetricsMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
@@ -161,6 +166,7 @@ MONGO_DB_NAME = os.getenv("MONGO_DB_NAME", "hybrid_db")
 JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", SECRET_KEY)
 JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
 JWT_EXP_MINUTES = int(os.getenv("JWT_EXP_MINUTES", "720"))
+JWT_REFRESH_EXP_MINUTES = int(os.getenv("JWT_REFRESH_EXP_MINUTES", "43200"))
 JWT_ISSUER = os.getenv("JWT_ISSUER", "hybrid-core")
 
 ALLOWED_ROLES = ["USER", "CAPTAIN", "RESTAURANT", "ADMIN"]
@@ -202,3 +208,25 @@ NOTIFICATION_MAX_RETRIES = int(os.getenv("NOTIFICATION_MAX_RETRIES", "3"))
 GO_HOME_ROUTE_BUFFER_KM = float(os.getenv("GO_HOME_ROUTE_BUFFER_KM", "1.0"))
 GO_HOME_ETA_BUFFER_MIN = int(os.getenv("GO_HOME_ETA_BUFFER_MIN", "10"))
 GO_HOME_MAX_SPEED_KMPH = float(os.getenv("GO_HOME_MAX_SPEED_KMPH", "200"))
+
+RATE_LIMIT_ENABLED = os.getenv("RATE_LIMIT_ENABLED", "1") == "1"
+RATE_LIMIT_MAX_REQUESTS = int(os.getenv("RATE_LIMIT_MAX_REQUESTS", "300"))
+RATE_LIMIT_WINDOW_SEC = int(os.getenv("RATE_LIMIT_WINDOW_SEC", "60"))
+RATE_LIMIT_EXEMPT_PATHS = [
+    "/api/v1/health",
+    "/api/v1/metrics",
+]
+
+IDEMPOTENCY_TTL_SEC = int(os.getenv("IDEMPOTENCY_TTL_SEC", "86400"))
+
+ORDER_ASSIGN_TIMEOUT_SEC = int(os.getenv("ORDER_ASSIGN_TIMEOUT_SEC", "600"))
+ORDER_DELIVERY_SLA_MIN = int(os.getenv("ORDER_DELIVERY_SLA_MIN", "45"))
+RIDE_ASSIGN_TIMEOUT_SEC = int(os.getenv("RIDE_ASSIGN_TIMEOUT_SEC", "300"))
+RIDE_COMPLETE_SLA_MIN = int(os.getenv("RIDE_COMPLETE_SLA_MIN", "60"))
+MATCH_RETRY_MAX = int(os.getenv("MATCH_RETRY_MAX", "2"))
+MATCH_RETRY_DELAY_SEC = int(os.getenv("MATCH_RETRY_DELAY_SEC", "20"))
+FATIGUE_MIN_REST_MIN = int(os.getenv("FATIGUE_MIN_REST_MIN", "15"))
+FATIGUE_PENALTY_WEIGHT = float(os.getenv("FATIGUE_PENALTY_WEIGHT", "0.5"))
+ZONE_BALANCE_WEIGHT = float(os.getenv("ZONE_BALANCE_WEIGHT", "0.2"))
+GO_HOME_SCORE_WEIGHT = float(os.getenv("GO_HOME_SCORE_WEIGHT", "0.3"))
+COMMISSION_PCT = float(os.getenv("COMMISSION_PCT", "0.2"))

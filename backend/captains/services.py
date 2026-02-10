@@ -399,10 +399,14 @@ def complete_job(user_id: str, job_type: str, job_id: str):
     if job_type == "ORDER":
         order_oid = to_object_id(job_id)
         order_doc = db.orders.find_one({"_id": order_oid}) if order_oid else None
-        db.orders.update_one(
-            {"_id": order_oid},
-            {"$set": {"status": "DELIVERED"}},
-        )
+        try:
+            from orders import state_machine as order_state
+            order_state.set_order_status(job_id, "DELIVERED", reason="COMPLETED")
+        except Exception:
+            db.orders.update_one(
+                {"_id": order_oid},
+                {"$set": {"status": "DELIVERED"}},
+            )
         if order_doc and order_doc.get("payment_mode") == "COD":
             db.orders.update_one(
                 {"_id": order_oid},
@@ -431,10 +435,14 @@ def complete_job(user_id: str, job_type: str, job_id: str):
     if job_type == "RIDE":
         ride_oid = to_object_id(job_id)
         ride_doc = db.rides.find_one({"_id": ride_oid}) if ride_oid else None
-        db.rides.update_one(
-            {"_id": ride_oid},
-            {"$set": {"status": "COMPLETED"}},
-        )
+        try:
+            from rides import state_machine as ride_state
+            ride_state.set_ride_status(job_id, "COMPLETED", reason="COMPLETED")
+        except Exception:
+            db.rides.update_one(
+                {"_id": ride_oid},
+                {"$set": {"status": "COMPLETED"}},
+            )
         if ride_doc and ride_doc.get("user_id"):
             notification_services.send_to_user(
                 str(ride_doc.get("user_id")),

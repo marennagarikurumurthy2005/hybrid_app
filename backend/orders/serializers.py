@@ -25,3 +25,9 @@ class VerifyPaymentSerializer(serializers.Serializer):
     razorpay_order_id = serializers.CharField()
     razorpay_payment_id = serializers.CharField()
     razorpay_signature = serializers.CharField()
+
+
+class ReorderSerializer(serializers.Serializer):
+    payment_mode = serializers.CharField()
+    wallet_amount = serializers.IntegerField(required=False, min_value=0)
+    redeem_points = serializers.IntegerField(required=False, min_value=0)

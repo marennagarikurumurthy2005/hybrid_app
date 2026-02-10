@@ -5,7 +5,7 @@ from rest_framework.permissions import IsAuthenticated
 
 from core.permissions import RolePermission
 from core.utils import serialize_doc
-from orders.serializers import CheckoutSerializer, CreateOrderSerializer, VerifyPaymentSerializer
+from orders.serializers import CheckoutSerializer, CreateOrderSerializer, VerifyPaymentSerializer, ReorderSerializer
 from orders import services
 from pricing import services as pricing_services
 from rewards import services as reward_services
@@ -140,3 +140,29 @@ class OrderVerifyPaymentView(APIView):
         except ValueError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return Response({"order": serialize_doc(order)})
+
+
+class OrderReorderView(APIView):
+    allowed_roles = ["USER"]
+    permission_classes = [IsAuthenticated, RolePermission]
+
+    # Sample payload:
+    # {"payment_mode": "WALLET_RAZORPAY", "wallet_amount": 2000, "redeem_points": 20}
+    def post(self, request, order_id: str):
+        serializer = ReorderSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            order, items, razorpay_order = services.reorder(
+                order_id,
+                request.user.id,
+                serializer.validated_data["payment_mode"],
+                serializer.validated_data.get("wallet_amount"),
+                redeem_points=serializer.validated_data.get("redeem_points"),
+            )
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({
+            "order": serialize_doc(order),
+            "items": serialize_doc(items),
+            "razorpay_order": razorpay_order,
+        }, status=status.HTTP_201_CREATED)

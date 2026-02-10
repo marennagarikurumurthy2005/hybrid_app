@@ -12,6 +12,7 @@ from pricing import services as pricing_services
 from core.vehicles import get_vehicle_rate, is_ev_vehicle
 from rewards import services as reward_services
 from vehicles import services as vehicle_services
+from rides import state_machine as ride_state
 
 PAYMENT_MODES = {"RAZORPAY", "WALLET", "WALLET_RAZORPAY"}
 
@@ -184,9 +185,13 @@ def create_ride(
             )
 
         ride_doc = db.rides.find_one({"_id": ride_id})
+        ride_doc = ride_state.ensure_ride_sla(ride_doc) or ride_doc
         return ride_doc, razorpay_order
     except Exception as exc:
-        db.rides.update_one({"_id": ride_id}, {"$set": {"status": "FAILED"}})
+        try:
+            ride_state.set_ride_status(str(ride_id), "FAILED", reason="CREATE_FAILED")
+        except Exception:
+            db.rides.update_one({"_id": ride_id}, {"$set": {"status": "FAILED"}})
         if wallet_txn:
             wallet_services.refund_wallet(
                 user_id,
@@ -213,17 +218,17 @@ def verify_ride_payment(ride_id: str, razorpay_order_id: str, razorpay_payment_i
 
     payment_services.verify_razorpay_signature(razorpay_order_id, razorpay_payment_id, razorpay_signature)
 
-    result = db.rides.update_one(
+    db.rides.update_one(
         {"_id": oid},
         {"$set": {
             "razorpay_order_id": razorpay_order_id,
             "razorpay_payment_id": razorpay_payment_id,
             "razorpay_signature": razorpay_signature,
             "is_paid": True,
-            "status": "REQUESTED",
         }},
     )
-    if result.matched_count == 0:
+    updated = ride_state.set_ride_status(ride_id, "REQUESTED", reason="PAYMENT_VERIFIED")
+    if not updated:
         raise ValueError("Ride not found")
     return db.rides.find_one({"_id": oid})
 
@@ -236,7 +241,10 @@ def complete_ride(ride_id: str):
     ride_doc = db.rides.find_one({"_id": oid})
     if not ride_doc:
         return None
-    db.rides.update_one({"_id": oid}, {"$set": {"status": "COMPLETED"}})
+    try:
+        ride_state.set_ride_status(ride_id, "COMPLETED", reason="COMPLETED")
+    except Exception:
+        db.rides.update_one({"_id": oid}, {"$set": {"status": "COMPLETED"}})
     if (
         ride_doc.get("is_ev")
         and not ride_doc.get("rewarded")
@@ -261,3 +269,39 @@ def complete_ride(ride_id: str):
             except Exception:
                 pass
     return db.rides.find_one({"_id": oid})
+
+
+def schedule_ride(
+    user_id: str,
+    pickup: dict,
+    dropoff: dict,
+    vehicle_type: str,
+    scheduled_for,
+    payment_mode: Optional[str] = None,
+    wallet_amount: Optional[int] = None,
+    redeem_points: Optional[int] = None,
+):
+    mode = normalize_payment_mode(payment_mode) if payment_mode else None
+    raw_base_fare = calculate_fare(pickup, dropoff, vehicle_type)
+    base_fare = int(round(raw_base_fare))
+    ride_doc = {
+        "user_id": to_object_id(user_id),
+        "pickup": pickup,
+        "dropoff": dropoff,
+        "pickup_location": to_point(pickup["lat"], pickup["lng"]),
+        "vehicle_type": vehicle_type,
+        "status": "SCHEDULED",
+        "job_status": "SCHEDULED",
+        "scheduled_for": scheduled_for,
+        "fare_estimate": base_fare,
+        "payment_mode": mode,
+        "wallet_amount": int(wallet_amount or 0),
+        "redeem_points": int(redeem_points or 0),
+        "created_at": utcnow(),
+        "captain_id": None,
+        "is_paid": False,
+    }
+    db = get_db()
+    result = db.rides.insert_one(ride_doc)
+    ride_doc["_id"] = result.inserted_id
+    return ride_doc

@@ -81,6 +81,23 @@ def _idle_minutes(captain: dict):
     return max(delta.total_seconds() / 60.0, 0.0)
 
 
+def _zone_key(lat: float, lng: float, precision: int = 2) -> str:
+    if lat is None or lng is None:
+        return ""
+    return f"{round(float(lat), precision)}:{round(float(lng), precision)}"
+
+
+def _zone_penalty(pickup_location: dict, captain: dict):
+    if not pickup_location or not pickup_location.get("coordinates"):
+        return 0.0
+    job_zone = _zone_key(pickup_location["coordinates"][1], pickup_location["coordinates"][0])
+    coords = captain.get("location", {}).get("coordinates", [None, None])
+    cap_zone = _zone_key(coords[1], coords[0]) if coords[0] is not None and coords[1] is not None else ""
+    if not job_zone or not cap_zone:
+        return float(getattr(settings, "ZONE_BALANCE_WEIGHT", 0.2))
+    return 0.0 if job_zone == cap_zone else float(getattr(settings, "ZONE_BALANCE_WEIGHT", 0.2))
+
+
 def _dispatch_score(captain: dict, pickup_location: dict, surge_multiplier: float):
     coords = captain.get("location", {}).get("coordinates", [None, None])
     if coords[0] is None or coords[1] is None:
@@ -97,6 +114,28 @@ def _dispatch_score(captain: dict, pickup_location: dict, surge_multiplier: floa
         - fairness * settings.DISPATCH_FAIRNESS_WEIGHT
     )
     return score
+
+
+def _fatigue_penalty(captain: dict):
+    min_rest = float(getattr(settings, "FATIGUE_MIN_REST_MIN", 15))
+    weight = float(getattr(settings, "FATIGUE_PENALTY_WEIGHT", 0.5))
+    idle = _idle_minutes(captain)
+    if idle >= min_rest:
+        return 0.0
+    return (min_rest - idle) * weight
+
+
+def calculate_match_score(job_doc: dict, captain: dict, pickup_location: dict, surge_multiplier: float = 1.0):
+    base_score = _dispatch_score(captain, pickup_location, surge_multiplier)
+    zone_penalty = _zone_penalty(pickup_location, captain)
+    fatigue_penalty = _fatigue_penalty(captain)
+    go_home_bonus = 0.0
+    metrics = captain.get("_go_home_metrics")
+    if metrics:
+        eta_gain = float(metrics.get("eta_gain_s") or 0)
+        route_distance = float(metrics.get("route_distance_km") or 0)
+        go_home_bonus = -eta_gain / 600.0 + route_distance * float(getattr(settings, "GO_HOME_SCORE_WEIGHT", 0.3))
+    return base_score + zone_penalty + fatigue_penalty + go_home_bonus
 
 
 def _go_home_metrics(captain: dict, pickup_location: dict, job_doc: dict):
@@ -153,17 +192,15 @@ def _go_home_metrics(captain: dict, pickup_location: dict, job_doc: dict):
     }
 
 
-def _rank_captains(captains: list, pickup_location: dict, surge_multiplier: float):
+def _rank_captains(captains: list, pickup_location: dict, surge_multiplier: float, job_doc: dict):
     scored = []
     for captain in captains:
-        base_score = _dispatch_score(captain, pickup_location, surge_multiplier)
+        score = calculate_match_score(job_doc, captain, pickup_location, surge_multiplier)
         metrics = captain.get("_go_home_metrics")
         if metrics:
-            route_distance = float(metrics.get("route_distance_km") or 0)
-            eta_gain = float(metrics.get("eta_gain_s") or 0)
             payout = float(metrics.get("payout") or 0)
-            base_score = base_score + route_distance * 1.5 - eta_gain / 600.0 - payout / 100000.0
-        scored.append((captain, base_score))
+            score = score - payout / 100000.0
+        scored.append((captain, score))
     scored.sort(key=lambda item: item[1])
     return [captain for captain, _ in scored]
 
@@ -197,11 +234,18 @@ def _try_batch_order(job_doc: dict, pickup_location: dict):
             continue
 
         order_id = str(job_doc.get("_id"))
+        try:
+            from orders import state_machine as order_state
+            order_state.set_order_status(order_id, "ASSIGNED", reason="BATCH_ASSIGNED")
+        except Exception:
+            db.orders.update_one(
+                {"_id": job_doc["_id"]},
+                {"$set": {"status": "ASSIGNED"}},
+            )
         db.orders.update_one(
             {"_id": job_doc["_id"]},
             {"$set": {
                 "captain_id": to_object_id(captain_id),
-                "status": "ASSIGNED",
                 "job_status": "ASSIGNED",
                 "matched_at": utcnow(),
                 "batched": True,
@@ -328,7 +372,7 @@ def create_job(job_type: str, job_id: str):
             captain["_go_home_metrics"] = metrics
         filtered.append(captain)
 
-    ranked = _rank_captains(filtered, pickup_location, surge_multiplier)
+    ranked = _rank_captains(filtered, pickup_location, surge_multiplier, job_doc)
     eta_map = {}
     try:
         from maps import services as maps_services
@@ -364,6 +408,17 @@ def offer_next_captain(job_type: str, job_id: str):
 
     candidate_id = pop_candidate(job_id)
     if not candidate_id:
+        try:
+            if job_type == "ORDER":
+                from orders import state_machine as order_state
+                if order_state.handle_no_captain(job_id):
+                    return None
+            if job_type == "RIDE":
+                from rides import state_machine as ride_state
+                if ride_state.handle_no_captain(job_id):
+                    return None
+        except Exception:
+            pass
         collection.update_one(
             {"_id": oid},
             {"$set": {"job_status": "NO_CAPTAIN", "current_offer": None}},
@@ -503,17 +558,23 @@ def accept_job(job_type: str, job_id: str, captain_id: str):
     if not captain:
         raise ValueError("Captain unavailable")
 
-    status = "ASSIGNED"
     if job_type == "ORDER":
-        status = "ASSIGNED"
+        try:
+            from orders import state_machine as order_state
+            order_state.set_order_status(job_id, "ASSIGNED", reason="CAPTAIN_ASSIGNED")
+        except Exception:
+            collection.update_one({"_id": oid}, {"$set": {"status": "ASSIGNED"}})
     if job_type == "RIDE":
-        status = "ASSIGNED"
+        try:
+            from rides import state_machine as ride_state
+            ride_state.set_ride_status(job_id, "ASSIGNED", reason="CAPTAIN_ASSIGNED")
+        except Exception:
+            collection.update_one({"_id": oid}, {"$set": {"status": "ASSIGNED"}})
 
     collection.update_one(
         {"_id": oid},
         {"$set": {
             "captain_id": captain_oid,
-            "status": status,
             "job_status": "ASSIGNED",
             "matched_at": utcnow(),
             "current_offer": None,

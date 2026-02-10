@@ -5,7 +5,7 @@ from rest_framework import status
 
 from core.permissions import RolePermission
 from core.utils import serialize_doc
-from trust.serializers import DeviceRegisterSerializer
+from trust.serializers import DeviceRegisterSerializer, RiskScoreSerializer
 from trust import services
 
 
@@ -36,4 +36,20 @@ class TrustScanView(APIView):
     def get(self, request):
         user_id = request.query_params.get("user_id")
         result = services.scan_user(user_id)
+        return Response(result)
+
+
+class RiskScoreView(APIView):
+    allowed_roles = ["USER", "CAPTAIN", "RESTAURANT", "ADMIN"]
+    permission_classes = [IsAuthenticated, RolePermission]
+
+    # Sample payload:
+    # {"user_id": "<user_id>", "device_id": "device-123"}
+    def post(self, request):
+        serializer = RiskScoreSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        result = services.calculate_risk_score(
+            serializer.validated_data["user_id"],
+            serializer.validated_data.get("device_id"),
+        )
         return Response(result)

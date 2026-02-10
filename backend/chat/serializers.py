@@ -15,3 +15,13 @@ class ChatHistorySerializer(serializers.Serializer):
 
 class ChatReceiptSerializer(serializers.Serializer):
     message_id = serializers.CharField()
+
+
+class ChatReadSerializer(serializers.Serializer):
+    room_id = serializers.CharField()
+    message_id = serializers.CharField(required=False, allow_blank=True)
+
+
+class ChatTypingSerializer(serializers.Serializer):
+    room_id = serializers.CharField()
+    is_typing = serializers.BooleanField()

@@ -5053,3 +5053,741 @@ Invalid message payload
 Notes:
 Supports `message`, `delivered`, and `ping` types. Messages are broadcast to the room.
 
+
+**Session Security APIs**
+Auth
+Endpoint: POST /api/v1/auth/refresh
+
+Purpose:
+Rotate refresh token and issue a new access token.
+
+Method: POST
+
+Authentication: None
+
+Headers:
+Content-Type: application/json
+
+Request Body:
+| Field | Type | Required | Notes |
+| refresh_token | string | Yes | Refresh JWT |
+
+Example Request:
+```json
+{
+  "refresh_token": "<refresh_jwt>"
+}
+```
+
+Example Response:
+```json
+{
+  "token": "<jwt>",
+  "refresh_token": "<new_refresh_jwt>"
+}
+```
+
+Error Example:
+```json
+{
+  "detail": "Refresh token revoked"
+}
+```
+
+Auth
+Endpoint: POST /api/v1/auth/logout
+
+Purpose:
+Logout and revoke tokens for the current session.
+
+Method: POST
+
+Authentication: JWT
+
+Headers:
+Content-Type: application/json
+Authorization: Bearer <jwt>
+
+Request Body:
+| Field | Type | Required | Notes |
+| refresh_token | string | No | Refresh JWT |
+
+Example Request:
+```json
+{
+  "refresh_token": "<refresh_jwt>"
+}
+```
+
+Example Response:
+```json
+{
+  "success": true
+}
+```
+
+Error Example:
+```json
+{
+  "detail": "Invalid token"
+}
+```
+
+Users
+Endpoint: GET /api/v1/users/sessions
+
+Purpose:
+List active sessions for the authenticated user.
+
+Method: GET
+
+Authentication: JWT
+
+Headers:
+Authorization: Bearer <jwt>
+
+Example Request:
+```json
+{}
+```
+
+Example Response:
+```json
+{
+  "sessions": [
+    {
+      "device_id": "device-123",
+      "device_name": "Pixel 7",
+      "ip_address": "203.0.113.1",
+      "last_seen": "2026-02-10T12:10:00Z"
+    }
+  ]
+}
+```
+
+Error Example:
+```json
+{
+  "detail": "Invalid token"
+}
+```
+
+**Address Book APIs**
+Users
+Endpoint: POST /api/v1/users/address
+
+Purpose:
+Create a saved address for the user.
+
+Method: POST
+
+Authentication: JWT (USER)
+
+Headers:
+Content-Type: application/json
+Authorization: Bearer <jwt>
+
+Request Body:
+| Field | Type | Required | Notes |
+| label | string | Yes | HOME, WORK, OTHER |
+| line1 | string | Yes | Address line 1 |
+| line2 | string | No | Address line 2 |
+| city | string | No | City |
+| state | string | No | State |
+| postal_code | string | No | Postal code |
+| landmark | string | No | Landmark |
+| lat | number | No | Latitude |
+| lng | number | No | Longitude |
+| is_default | boolean | No | Default address |
+
+Example Request:
+```json
+{
+  "label": "HOME",
+  "line1": "MG Road",
+  "city": "Bengaluru",
+  "lat": 12.9716,
+  "lng": 77.5946,
+  "is_default": true
+}
+```
+
+Example Response:
+```json
+{
+  "address": {
+    "_id": "65c8f1a2e9f1c3a1b2c3d4aa",
+    "label": "HOME",
+    "line1": "MG Road",
+    "city": "Bengaluru",
+    "is_default": true
+  }
+}
+```
+
+Error Example:
+```json
+{
+  "detail": "Invalid latitude"
+}
+```
+
+Users
+Endpoint: GET /api/v1/users/address
+
+Purpose:
+List saved addresses for the user.
+
+Method: GET
+
+Authentication: JWT (USER)
+
+Headers:
+Authorization: Bearer <jwt>
+
+Example Request:
+```json
+{}
+```
+
+Example Response:
+```json
+{
+  "addresses": [
+    {"label": "HOME", "line1": "MG Road"}
+  ]
+}
+```
+
+Error Example:
+```json
+{
+  "detail": "Invalid token"
+}
+```
+
+Users
+Endpoint: PATCH /api/v1/users/address/{id}
+
+Purpose:
+Update a saved address.
+
+Method: PATCH
+
+Authentication: JWT (USER)
+
+Headers:
+Content-Type: application/json
+Authorization: Bearer <jwt>
+
+Example Request:
+```json
+{
+  "label": "WORK",
+  "is_default": false
+}
+```
+
+Example Response:
+```json
+{
+  "address": {
+    "label": "WORK",
+    "is_default": false
+  }
+}
+```
+
+Error Example:
+```json
+{
+  "detail": "Address not found"
+}
+```
+
+Users
+Endpoint: DELETE /api/v1/users/address/{id}
+
+Purpose:
+Delete a saved address.
+
+Method: DELETE
+
+Authentication: JWT (USER)
+
+Headers:
+Authorization: Bearer <jwt>
+
+Example Request:
+```json
+{}
+```
+
+Example Response:
+```json
+{
+  "deleted": true
+}
+```
+
+Error Example:
+```json
+{
+  "detail": "Address not found"
+}
+```
+
+**Notification Reliability APIs**
+Notifications
+Endpoint: POST /api/v1/notify/retry/{id}
+
+Purpose:
+Retry a failed or queued notification.
+
+Method: POST
+
+Authentication: JWT (ADMIN)
+
+Headers:
+Authorization: Bearer <jwt>
+
+Example Request:
+```json
+{}
+```
+
+Example Response:
+```json
+{
+  "queued": true
+}
+```
+
+Error Example:
+```json
+{
+  "detail": "Notification not found"
+}
+```
+
+**Financial Ledger APIs**
+Wallet
+Endpoint: GET /api/v1/wallet/ledger
+
+Purpose:
+List ledger entries for the authenticated user.
+
+Method: GET
+
+Authentication: JWT
+
+Headers:
+Authorization: Bearer <jwt>
+
+Example Request:
+```json
+{}
+```
+
+Example Response:
+```json
+{
+  "entries": [
+    {
+      "account": "USER_WALLET",
+      "direction": "DEBIT",
+      "amount": 2500
+    }
+  ]
+}
+```
+
+Error Example:
+```json
+{
+  "detail": "Invalid token"
+}
+```
+
+Wallet
+Endpoint: POST /api/v1/wallet/settle
+
+Purpose:
+Run settlement for completed orders and rides.
+
+Method: POST
+
+Authentication: JWT (ADMIN)
+
+Headers:
+Content-Type: application/json
+Authorization: Bearer <jwt>
+
+Example Request:
+```json
+{
+  "limit": 50
+}
+```
+
+Example Response:
+```json
+{
+  "settled": [
+    {"reference_type": "ORDER", "amount": 45000}
+  ]
+}
+```
+
+Error Example:
+```json
+{
+  "detail": "Not allowed"
+}
+```
+
+**Trust & Safety APIs**
+Trust
+Endpoint: POST /api/v1/trust/risk-score
+
+Purpose:
+Calculate risk score using device reuse and location anomalies.
+
+Method: POST
+
+Authentication: JWT
+
+Headers:
+Content-Type: application/json
+Authorization: Bearer <jwt>
+
+Example Request:
+```json
+{
+  "user_id": "<user_id>",
+  "device_id": "device-123"
+}
+```
+
+Example Response:
+```json
+{
+  "user_id": "<user_id>",
+  "risk_score": 45,
+  "reasons": [
+    {"type": "DEVICE_REUSE"}
+  ]
+}
+```
+
+Error Example:
+```json
+{
+  "detail": "Invalid token"
+}
+```
+
+**Chat Enhancement APIs**
+Chat
+Endpoint: POST /api/v1/chat/read
+
+Purpose:
+Mark a room or message as read.
+
+Method: POST
+
+Authentication: JWT
+
+Headers:
+Content-Type: application/json
+Authorization: Bearer <jwt>
+
+Example Request:
+```json
+{
+  "room_id": "<room_id>",
+  "message_id": "<message_id>"
+}
+```
+
+Example Response:
+```json
+{
+  "read": {
+    "room_id": "<room_id>",
+    "last_read_message_id": "<message_id>"
+  }
+}
+```
+
+Error Example:
+```json
+{
+  "detail": "Not allowed"
+}
+```
+
+Chat
+Endpoint: POST /api/v1/chat/typing
+
+Purpose:
+Record typing events for a room.
+
+Method: POST
+
+Authentication: JWT
+
+Headers:
+Content-Type: application/json
+Authorization: Bearer <jwt>
+
+Example Request:
+```json
+{
+  "room_id": "<room_id>",
+  "is_typing": true
+}
+```
+
+Example Response:
+```json
+{
+  "typing": {
+    "room_id": "<room_id>",
+    "is_typing": true
+  }
+}
+```
+
+Error Example:
+```json
+{
+  "detail": "Not allowed"
+}
+```
+
+**UX Product APIs**
+Orders
+Endpoint: POST /api/v1/orders/reorder/{id}
+
+Purpose:
+Create a new order based on a previous order.
+
+Method: POST
+
+Authentication: JWT (USER)
+
+Headers:
+Content-Type: application/json
+Authorization: Bearer <jwt>
+
+Example Request:
+```json
+{
+  "payment_mode": "WALLET_RAZORPAY",
+  "wallet_amount": 2000
+}
+```
+
+Example Response:
+```json
+{
+  "order": {"_id": "<new_order_id>"},
+  "items": [],
+  "razorpay_order": {"id": "order_abc"}
+}
+```
+
+Error Example:
+```json
+{
+  "detail": "Order not found"
+}
+```
+
+Users
+Endpoint: POST /api/v1/favorites
+
+Purpose:
+Add a restaurant or menu item to favorites.
+
+Method: POST
+
+Authentication: JWT (USER)
+
+Headers:
+Content-Type: application/json
+Authorization: Bearer <jwt>
+
+Example Request:
+```json
+{
+  "favorite_type": "RESTAURANT",
+  "reference_id": "<restaurant_id>"
+}
+```
+
+Example Response:
+```json
+{
+  "favorite": {
+    "favorite_type": "RESTAURANT",
+    "reference_id": "<restaurant_id>"
+  }
+}
+```
+
+Error Example:
+```json
+{
+  "detail": "Invalid token"
+}
+```
+
+Rides
+Endpoint: POST /api/v1/rides/schedule
+
+Purpose:
+Schedule a ride for a future time.
+
+Method: POST
+
+Authentication: JWT (USER)
+
+Headers:
+Content-Type: application/json
+Authorization: Bearer <jwt>
+
+Example Request:
+```json
+{
+  "pickup_lat": 12.97,
+  "pickup_lng": 77.59,
+  "dropoff_lat": 12.93,
+  "dropoff_lng": 77.61,
+  "vehicle_type": "BIKE",
+  "scheduled_for": "2026-02-11T09:00:00Z"
+}
+```
+
+Example Response:
+```json
+{
+  "ride": {
+    "status": "SCHEDULED",
+    "scheduled_for": "2026-02-11T09:00:00Z"
+  }
+}
+```
+
+Error Example:
+```json
+{
+  "detail": "Invalid vehicle_type"
+}
+```
+
+Support
+Endpoint: POST /api/v1/support/ticket
+
+Purpose:
+Create a support ticket.
+
+Method: POST
+
+Authentication: JWT (USER/CAPTAIN/RESTAURANT)
+
+Headers:
+Content-Type: application/json
+Authorization: Bearer <jwt>
+
+Example Request:
+```json
+{
+  "subject": "Refund issue",
+  "message": "I was charged twice",
+  "priority": "HIGH"
+}
+```
+
+Example Response:
+```json
+{
+  "ticket": {
+    "status": "OPEN",
+    "subject": "Refund issue"
+  }
+}
+```
+
+Error Example:
+```json
+{
+  "detail": "Invalid token"
+}
+```
+
+**Observability APIs**
+System
+Endpoint: GET /api/v1/health
+
+Purpose:
+Health check endpoint.
+
+Method: GET
+
+Authentication: None
+
+Headers:
+None
+
+Example Request:
+```json
+{}
+```
+
+Example Response:
+```json
+{
+  "status": "ok",
+  "timestamp": "2026-02-10T12:30:00Z"
+}
+```
+
+Error Example:
+```json
+{
+  "status": "degraded",
+  "timestamp": "2026-02-10T12:30:00Z"
+}
+```
+
+System
+Endpoint: GET /api/v1/metrics
+
+Purpose:
+Prometheus metrics export.
+
+Method: GET
+
+Authentication: None
+
+Headers:
+None
+
+Example Request:
+```json
+{}
+```
+
+Example Response:
+```json
+# HELP http_requests_total Total HTTP requests
+# TYPE http_requests_total counter
+http_requests_total{method="GET",path="/api/v1/health",status="200"} 42
+```
+
+Error Example:
+```json
+prometheus_client not installed
+```

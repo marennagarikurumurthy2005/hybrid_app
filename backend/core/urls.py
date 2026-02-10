@@ -44,6 +44,8 @@ urlpatterns = [
     path('api/v1/', include('eta.urls')),
     path('api/v1/', include('growth.urls')),
     path('api/v1/', include('vehicles.urls')),
+    path('api/v1/', include('support.urls')),
+    path('api/v1/', include('observability.urls')),
     path('api/', include('maps.urls')),
     path('api/', include('captains.urls')),
 ]

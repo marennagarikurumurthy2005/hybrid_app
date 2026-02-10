@@ -43,3 +43,21 @@ class VerifyRidePaymentSerializer(serializers.Serializer):
 
 class RideCompleteSerializer(serializers.Serializer):
     ride_id = serializers.CharField()
+
+
+class ScheduleRideSerializer(serializers.Serializer):
+    pickup_lat = serializers.FloatField()
+    pickup_lng = serializers.FloatField()
+    dropoff_lat = serializers.FloatField()
+    dropoff_lng = serializers.FloatField()
+    vehicle_type = serializers.CharField()
+    scheduled_for = serializers.DateTimeField()
+    payment_mode = serializers.CharField(required=False)
+    wallet_amount = serializers.IntegerField(required=False, min_value=0)
+    redeem_points = serializers.IntegerField(required=False, min_value=0)
+
+    def validate_vehicle_type(self, value):
+        normalized = normalize_vehicle_type(value)
+        if not normalized:
+            raise serializers.ValidationError(f"Invalid vehicle_type. Allowed: {', '.join(VEHICLE_TYPES)}")
+        return normalized

@@ -6,3 +6,7 @@ class WalletRefundSerializer(serializers.Serializer):
     amount = serializers.IntegerField(min_value=1)
     reason = serializers.CharField()
     source = serializers.ChoiceField(choices=["FOOD", "RIDE", "REFUND"])
+
+
+class WalletSettleSerializer(serializers.Serializer):
+    limit = serializers.IntegerField(required=False, min_value=1, max_value=500)

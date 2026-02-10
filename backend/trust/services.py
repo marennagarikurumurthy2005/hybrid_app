@@ -1,4 +1,5 @@
 from typing import Optional
+from datetime import timedelta
 from pymongo import ASCENDING
 
 from core.db import get_db
@@ -65,3 +66,50 @@ def scan_user(user_id: Optional[str] = None):
     if findings:
         db.trust_logs.insert_one({"user_id": to_object_id(user_id) if user_id else None, "findings": findings, "created_at": utcnow()})
     return {"findings": findings, "device_count": len(devices)}
+
+
+def calculate_risk_score(user_id: str, device_id: Optional[str] = None):
+    ensure_indexes()
+    db = get_db()
+    oid = to_object_id(user_id)
+    if not oid:
+        return {"user_id": user_id, "risk_score": 0, "reasons": []}
+
+    reasons = []
+    score = 0
+
+    if device_id:
+        users = list(db.devices.find({"device_id": device_id}))
+        user_ids = {str(u.get("user_id")) for u in users if u.get("user_id")}
+        if len(user_ids) > 1:
+            score += 40
+            reasons.append({"type": "DEVICE_REUSE", "detail": "device used by multiple users"})
+    else:
+        device_ids = list(db.devices.distinct("device_id", {"user_id": oid}))
+        for did in device_ids:
+            users = list(db.devices.find({"device_id": did}))
+            user_ids = {str(u.get("user_id")) for u in users if u.get("user_id")}
+            if len(user_ids) > 1:
+                score += 20
+                reasons.append({"type": "DEVICE_REUSE", "detail": f"device_id={did}"})
+
+    since = utcnow() - timedelta(hours=24)
+    logs = list(db.trust_logs.find({"user_id": oid, "created_at": {"$gte": since}}))
+    for log in logs:
+        for finding in log.get("findings", []):
+            ftype = finding.get("type")
+            if ftype in {"GPS_JUMP", "MOCK_LOCATION"}:
+                score += 25
+                reasons.append({"type": "GPS_SPOOF", "detail": finding.get("detail")})
+            if ftype in {"SPEED_ANOMALY"}:
+                score += 15
+                reasons.append({"type": "VELOCITY_ANOMALY", "detail": finding.get("detail")})
+
+    score = min(score, 100)
+    db.trust_logs.insert_one({
+        "user_id": oid,
+        "findings": reasons,
+        "risk_score": score,
+        "created_at": utcnow(),
+    })
+    return {"user_id": str(oid), "risk_score": score, "reasons": reasons}
