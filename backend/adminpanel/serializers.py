@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
 
-class AdminListSerializer(serializers.Serializer):
-    limit = serializers.IntegerField(required=False, min_value=1, max_value=500)
-    skip = serializers.IntegerField(required=False, min_value=0)
+class AdminCaptainVerifySerializer(serializers.Serializer):
+    is_verified = serializers.BooleanField()
+    reason = serializers.CharField(required=False, allow_blank=True)

@@ -198,6 +198,7 @@ def find_nearby_captains(lat: float, lng: float, radius_m: int = 5000, limit: in
     db = get_db()
     cursor = db.captains.find({
         "is_online": True,
+        "is_verified": True,
         "is_busy": {"$ne": True},
         "location": {
             "$near": {

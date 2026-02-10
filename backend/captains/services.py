@@ -16,6 +16,15 @@ def ensure_captain_profile(user_id: str):
         "user_id": oid,
         "is_online": False,
         "is_busy": False,
+        "vehicle_type": None,
+        "vehicle_number": None,
+        "vehicle_brand": None,
+        "license_number": None,
+        "rc_image": None,
+        "license_image": None,
+        "is_verified": False,
+        "verified_at": None,
+        "verification_reason": None,
         "location": None,
         "current_job_id": None,
         "current_job_type": None,
@@ -39,6 +48,11 @@ def set_online_status(user_id: str, is_online: bool):
     oid = to_object_id(user_id)
     if not oid:
         return None
+    captain = db.captains.find_one({"user_id": oid})
+    if not captain:
+        return None
+    if is_online and not captain.get("is_verified", False):
+        raise ValueError("Captain is not verified")
     update = {"is_online": is_online, "last_seen": utcnow()}
     if not is_online:
         update["is_busy"] = False
@@ -85,12 +99,56 @@ def update_location(user_id: str, lat: float, lng: float):
     return updated
 
 
+def register_vehicle(user_id: str, vehicle: dict):
+    db = get_db()
+    oid = to_object_id(user_id)
+    if not oid:
+        return None
+    existing = db.captains.find_one({"user_id": oid})
+    if not existing:
+        existing = ensure_captain_profile(user_id)
+    update = {
+        "vehicle_type": vehicle.get("vehicle_type"),
+        "vehicle_number": vehicle.get("vehicle_number"),
+        "vehicle_brand": vehicle.get("vehicle_brand"),
+        "license_number": vehicle.get("license_number"),
+        "rc_image": vehicle.get("rc_image"),
+        "license_image": vehicle.get("license_image"),
+        "is_verified": False,
+        "verified_at": None,
+        "verification_reason": None,
+        "is_online": False,
+    }
+    db.captains.update_one({"user_id": oid}, {"$set": update})
+    return db.captains.find_one({"user_id": oid})
+
+
+def get_vehicle(user_id: str):
+    db = get_db()
+    oid = to_object_id(user_id)
+    if not oid:
+        return None
+    captain = db.captains.find_one({"user_id": oid})
+    if not captain:
+        return None
+    return {
+        "vehicle_type": captain.get("vehicle_type"),
+        "vehicle_number": captain.get("vehicle_number"),
+        "vehicle_brand": captain.get("vehicle_brand"),
+        "license_number": captain.get("license_number"),
+        "rc_image": captain.get("rc_image"),
+        "license_image": captain.get("license_image"),
+        "is_verified": captain.get("is_verified", False),
+    }
+
+
 def assign_captain_stub(job_type: str, job_id: str):
     db = get_db()
     pipeline = [
         {
             "$match": {
                 "is_online": True,
+                "is_verified": True,
                 "is_busy": False,
                 "$or": [
                     {"current_job_id": None},

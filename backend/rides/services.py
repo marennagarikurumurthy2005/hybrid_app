@@ -9,6 +9,7 @@ from payments import services as payment_services
 from notifications import services as notification_services
 from core import matching_service
 from pricing import services as pricing_services
+from core.vehicles import get_vehicle_rate
 
 PAYMENT_MODES = {"RAZORPAY", "WALLET", "WALLET_RAZORPAY"}
 
@@ -36,20 +37,20 @@ def haversine_km(lat1, lon1, lat2, lon2):
     return r * c
 
 
-def calculate_fare(pickup: dict, dropoff: dict):
+def calculate_fare(pickup: dict, dropoff: dict, vehicle_type: str):
     distance_km = haversine_km(pickup["lat"], pickup["lng"], dropoff["lat"], dropoff["lng"])
-    base_fare = 3000
-    per_km = 1500
-    fare = base_fare + int(distance_km * per_km)
-    return max(fare, base_fare)
+    rate = get_vehicle_rate(vehicle_type)
+    if rate is None:
+        raise ValueError("Invalid vehicle type")
+    return max(distance_km * rate, 0.0)
 
 
-def create_ride(user_id: str, pickup: dict, dropoff: dict, payment_mode: str, wallet_amount: Optional[int]):
+def create_ride(user_id: str, pickup: dict, dropoff: dict, vehicle_type: str, payment_mode: str, wallet_amount: Optional[int]):
     mode = normalize_payment_mode(payment_mode)
     if not mode:
         raise ValueError("Invalid payment mode")
 
-    base_fare = calculate_fare(pickup, dropoff)
+    raw_base_fare = calculate_fare(pickup, dropoff, vehicle_type)
     surge_data = None
     surge_multiplier = 1.0
     try:
@@ -57,7 +58,8 @@ def create_ride(user_id: str, pickup: dict, dropoff: dict, payment_mode: str, wa
         surge_multiplier = float(surge_data.get("surge_multiplier", 1.0))
     except Exception:
         surge_multiplier = 1.0
-    fare = pricing_services.apply_surge(base_fare, surge_multiplier)
+    base_fare = int(round(raw_base_fare))
+    fare = int(round(raw_base_fare * surge_multiplier))
     surge_amount = max(0, fare - base_fare)
     wallet_to_use = 0
     if mode == "WALLET":
@@ -91,6 +93,7 @@ def create_ride(user_id: str, pickup: dict, dropoff: dict, payment_mode: str, wa
         "pickup": pickup,
         "dropoff": dropoff,
         "pickup_location": pickup_location,
+        "vehicle_type": vehicle_type,
         "fare": fare,
         "fare_base": base_fare,
         "surge_multiplier": round(surge_multiplier, 2),

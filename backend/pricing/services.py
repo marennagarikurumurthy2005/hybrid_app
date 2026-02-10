@@ -57,6 +57,7 @@ def _count_supply(location: dict, radius_m: int):
     db = get_db()
     return db.captains.count_documents({
         "is_online": True,
+        "is_verified": True,
         "is_busy": {"$ne": True},
         "location": {
             "$near": {"$geometry": location, "$maxDistance": radius_m}

@@ -1,4 +1,6 @@
 from pymongo import ASCENDING
+
+from core.utils import to_object_id, utcnow
 from core.db import get_db
 
 _index_ready = False
@@ -56,3 +58,25 @@ def list_captains(limit: int = 50, skip: int = 0):
     db = get_db()
     cursor = db.captains.find({}).skip(skip).limit(limit)
     return list(cursor)
+
+
+def verify_captain(captain_id: str, is_verified: bool, reason: str = None):
+    db = get_db()
+    oid = to_object_id(captain_id)
+    if not oid:
+        return None
+    update = {
+        "is_verified": bool(is_verified),
+        "verified_at": utcnow() if is_verified else None,
+    }
+    if reason is not None:
+        update["verification_reason"] = reason
+    if not is_verified:
+        update["is_online"] = False
+    result = db.captains.update_one({"user_id": oid}, {"$set": update})
+    if result.matched_count == 0:
+        result = db.captains.update_one({"_id": oid}, {"$set": update})
+        if result.matched_count == 0:
+            return None
+        return db.captains.find_one({"_id": oid})
+    return db.captains.find_one({"user_id": oid})

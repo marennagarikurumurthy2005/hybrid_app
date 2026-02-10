@@ -15,15 +15,23 @@ class RideFareView(APIView):
     permission_classes = [IsAuthenticated, RolePermission]
 
     # Sample payload:
-    # {"pickup_lat": 12.97, "pickup_lng": 77.59, "dropoff_lat": 12.93, "dropoff_lng": 77.61}
+    # {
+    #   "pickup_lat": 12.97,
+    #   "pickup_lng": 77.59,
+    #   "dropoff_lat": 12.93,
+    #   "dropoff_lng": 77.61,
+    #   "vehicle_type": "CAR"
+    # }
     def post(self, request):
         serializer = FareSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        base_fare = services.calculate_fare(
+        raw_base_fare = services.calculate_fare(
             {"lat": serializer.validated_data["pickup_lat"], "lng": serializer.validated_data["pickup_lng"]},
             {"lat": serializer.validated_data["dropoff_lat"], "lng": serializer.validated_data["dropoff_lng"]},
+            serializer.validated_data["vehicle_type"],
         )
         surge_multiplier = 1.0
+        base_fare = int(round(raw_base_fare))
         total_fare = base_fare
         surge_amount = 0
         try:
@@ -34,7 +42,7 @@ class RideFareView(APIView):
                 store_history=False,
             )
             surge_multiplier = float(surge_data.get("surge_multiplier", 1.0))
-            total_fare = pricing_services.apply_surge(base_fare, surge_multiplier)
+            total_fare = int(round(raw_base_fare * surge_multiplier))
             surge_amount = max(0, total_fare - base_fare)
         except Exception:
             pass
@@ -56,6 +64,7 @@ class RideCreateView(APIView):
     #   "pickup_lng": 77.59,
     #   "dropoff_lat": 12.93,
     #   "dropoff_lng": 77.61,
+    #   "vehicle_type": "BIKE",
     #   "payment_mode": "WALLET + RAZORPAY",
     #   "wallet_amount": 2000
     # }
@@ -67,6 +76,7 @@ class RideCreateView(APIView):
                 user_id=request.user.id,
                 pickup={"lat": serializer.validated_data["pickup_lat"], "lng": serializer.validated_data["pickup_lng"]},
                 dropoff={"lat": serializer.validated_data["dropoff_lat"], "lng": serializer.validated_data["dropoff_lng"]},
+                vehicle_type=serializer.validated_data["vehicle_type"],
                 payment_mode=serializer.validated_data["payment_mode"],
                 wallet_amount=serializer.validated_data.get("wallet_amount"),
             )

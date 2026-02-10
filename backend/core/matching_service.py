@@ -110,6 +110,7 @@ def _try_batch_order(job_doc: dict, pickup_location: dict):
     radius = min(settings.CAPTAIN_MATCH_RADIUS_M, 2000)
     cursor = db.captains.find({
         "is_online": True,
+        "is_verified": True,
         "is_busy": True,
         "current_job_type": "ORDER",
         "location": {
@@ -182,13 +183,14 @@ def _log_matching_decision(job_type: str, job_id: str, candidate_ids: list, eta_
     })
 
 
-def find_nearby_captains(pickup_location: dict, radius_m: Optional[int] = None, limit: Optional[int] = None):
+def find_nearby_captains(pickup_location: dict, radius_m: Optional[int] = None, limit: Optional[int] = None, vehicle_type: Optional[str] = None):
     ensure_captain_geo_index()
     db = get_db()
     radius = radius_m or settings.CAPTAIN_MATCH_RADIUS_M
     max_limit = limit or settings.CAPTAIN_MATCH_MAX_CANDIDATES
-    cursor = db.captains.find({
+    query = {
         "is_online": True,
+        "is_verified": True,
         "is_busy": {"$ne": True},
         "location": {
             "$near": {
@@ -196,7 +198,10 @@ def find_nearby_captains(pickup_location: dict, radius_m: Optional[int] = None, 
                 "$maxDistance": radius,
             }
         },
-    }).limit(max_limit)
+    }
+    if vehicle_type:
+        query["vehicle_type"] = vehicle_type
+    cursor = db.captains.find(query).limit(max_limit)
     return list(cursor)
 
 
@@ -232,7 +237,8 @@ def create_job(job_type: str, job_id: str):
     except Exception:
         surge_multiplier = 1.0
 
-    captains = find_nearby_captains(pickup_location)
+    vehicle_type = job_doc.get("vehicle_type")
+    captains = find_nearby_captains(pickup_location, vehicle_type=vehicle_type)
     ranked = _rank_captains(captains, pickup_location, surge_multiplier)
     eta_map = {}
     try:
@@ -377,8 +383,12 @@ def accept_job(job_type: str, job_id: str, captain_id: str):
     if not offered or str(offered) != str(captain_oid):
         raise ValueError("Job not offered to this captain")
 
+    captain_query = {"user_id": captain_oid, "is_online": True, "is_busy": False, "is_verified": True}
+    job_vehicle_type = job_doc.get("vehicle_type")
+    if job_vehicle_type:
+        captain_query["vehicle_type"] = job_vehicle_type
     captain = db.captains.find_one_and_update(
-        {"user_id": captain_oid, "is_online": True, "is_busy": False},
+        captain_query,
         {"$set": {
             "is_busy": True,
             "current_job_id": oid,

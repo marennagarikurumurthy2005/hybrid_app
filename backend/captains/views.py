@@ -5,7 +5,14 @@ from rest_framework.permissions import IsAuthenticated
 
 from core.permissions import RolePermission
 from core.utils import serialize_doc
-from captains.serializers import OnlineStatusSerializer, LocationSerializer, JobSerializer, JobCreateSerializer, JobDecisionSerializer
+from captains.serializers import (
+    OnlineStatusSerializer,
+    LocationSerializer,
+    JobSerializer,
+    JobCreateSerializer,
+    JobDecisionSerializer,
+    VehicleRegisterSerializer,
+)
 from captains import services
 from core import matching_service
 
@@ -19,7 +26,10 @@ class CaptainOnlineView(APIView):
     def post(self, request):
         serializer = OnlineStatusSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        updated = services.set_online_status(request.user.id, serializer.validated_data["is_online"])
+        try:
+            updated = services.set_online_status(request.user.id, serializer.validated_data["is_online"])
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_403_FORBIDDEN)
         return Response({"captain": serialize_doc(updated)})
 
 
@@ -157,3 +167,37 @@ class JobCompleteView(APIView):
         except ValueError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return Response({"job": serialize_doc(job)})
+
+
+class CaptainVehicleRegisterView(APIView):
+    allowed_roles = ["CAPTAIN"]
+    permission_classes = [IsAuthenticated, RolePermission]
+
+    # Sample payload:
+    # {
+    #   "vehicle_type": "BIKE",
+    #   "vehicle_number": "KA01AB1234",
+    #   "vehicle_brand": "Honda",
+    #   "license_number": "DL123456789",
+    #   "rc_image": "https://cdn.example.com/rc.jpg",
+    #   "license_image": "https://cdn.example.com/license.jpg"
+    # }
+    def post(self, request):
+        serializer = VehicleRegisterSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        updated = services.register_vehicle(request.user.id, serializer.validated_data)
+        if not updated:
+            return Response({"detail": "Captain not found"}, status=status.HTTP_404_NOT_FOUND)
+        vehicle = services.get_vehicle(request.user.id)
+        return Response({"vehicle": serialize_doc(vehicle), "captain": serialize_doc(updated)})
+
+
+class CaptainVehicleMeView(APIView):
+    allowed_roles = ["CAPTAIN"]
+    permission_classes = [IsAuthenticated, RolePermission]
+
+    def get(self, request):
+        vehicle = services.get_vehicle(request.user.id)
+        if not vehicle:
+            return Response({"detail": "Captain not found"}, status=status.HTTP_404_NOT_FOUND)
+        return Response({"vehicle": serialize_doc(vehicle)})
