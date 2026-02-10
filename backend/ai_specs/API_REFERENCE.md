@@ -387,6 +387,227 @@ Invalid or missing JWT
 Notes:
 Used by all roles for notifications.
 
+🔹 Profile Management APIs
+Users
+Endpoint: PATCH /api/v1/users/me/
+
+Purpose:
+Update non-sensitive user profile fields.
+
+Method: PATCH
+
+Authentication: JWT (USER)
+
+Headers:
+Content-Type: application/json
+Authorization: Bearer <jwt>
+
+Path Params:
+| Param | Type | Required | Notes |
+| - | - | - | - |
+
+Query Params:
+| Param | Type | Required | Notes |
+| - | - | - | - |
+
+Request Body:
+| Field | Type | Required | Notes |
+| name | string | No | Display name |
+| email | string | No | Must be valid email |
+| avatar_url | string | No | Avatar image URL |
+| default_address | object | No | Free-form address object |
+| preferences | object | No | Free-form preferences |
+
+Example Request:
+```json
+{
+  "name": "Asha Rao",
+  "email": "asha@example.com",
+  "avatar_url": "https://cdn.example.com/u/asha.png",
+  "default_address": {"label": "Home", "line1": "MG Road"},
+  "preferences": {"language": "en"}
+}
+```
+
+Example Response:
+```json
+{
+  "success": true,
+  "message": "Profile updated successfully",
+  "data": {
+    "_id": "65c7f7d0e9f1c3a1b2c3d4e5",
+    "name": "Asha Rao",
+    "email": "asha@example.com",
+    "avatar_url": "https://cdn.example.com/u/asha.png",
+    "default_address": {"label": "Home", "line1": "MG Road"},
+    "preferences": {"language": "en"}
+  }
+}
+```
+
+Status Codes:
+200 OK
+400 Bad Request
+401 Unauthorized
+403 Forbidden
+
+Error Cases:
+Attempt to update restricted fields (phone, role, wallet_balance, ratings, verification flags, timestamps)
+No valid fields to update
+Invalid payload schema
+
+Notes:
+Unknown fields are ignored.
+
+Captains
+Endpoint: PATCH /api/v1/captain/me/
+
+Purpose:
+Update non-sensitive captain profile fields.
+
+Method: PATCH
+
+Authentication: JWT (CAPTAIN)
+
+Headers:
+Content-Type: application/json
+Authorization: Bearer <jwt>
+
+Path Params:
+| Param | Type | Required | Notes |
+| - | - | - | - |
+
+Query Params:
+| Param | Type | Required | Notes |
+| - | - | - | - |
+
+Request Body:
+| Field | Type | Required | Notes |
+| name | string | No | Display name |
+| avatar_url | string | No | Avatar image URL |
+| vehicle_number | string | No | Vehicle number |
+| vehicle_type | string | No | Normalized vehicle type |
+| home_location | object | No | {lat, lng} |
+| bio | string | No | Short bio |
+
+Example Request:
+```json
+{
+  "name": "Ravi Kumar",
+  "vehicle_number": "KA01AB1234",
+  "vehicle_type": "BIKE",
+  "home_location": {"lat": 12.9716, "lng": 77.5946},
+  "bio": "7 years experience"
+}
+```
+
+Example Response:
+```json
+{
+  "success": true,
+  "message": "Profile updated successfully",
+  "data": {
+    "user_id": "65c7f7d0e9f1c3a1b2c3d4e8",
+    "name": "Ravi Kumar",
+    "vehicle_number": "KA01AB1234",
+    "vehicle_type": "BIKE",
+    "home_location": {"type": "Point", "coordinates": [77.5946, 12.9716]},
+    "bio": "7 years experience"
+  }
+}
+```
+
+Status Codes:
+200 OK
+400 Bad Request
+401 Unauthorized
+403 Forbidden
+
+Error Cases:
+Attempt to update restricted fields (phone, role, wallet_balance, ratings, verification flags, timestamps)
+No valid fields to update
+Invalid payload schema
+
+Notes:
+Unknown fields are ignored. Vehicle type is normalized.
+
+Restaurants
+Endpoint: PATCH /api/v1/restaurant/me/
+
+Purpose:
+Update non-sensitive restaurant profile fields.
+
+Method: PATCH
+
+Authentication: JWT (RESTAURANT)
+
+Headers:
+Content-Type: application/json
+Authorization: Bearer <jwt>
+
+Path Params:
+| Param | Type | Required | Notes |
+| - | - | - | - |
+
+Query Params:
+| Param | Type | Required | Notes |
+| - | - | - | - |
+
+Request Body:
+| Field | Type | Required | Notes |
+| name | string | No | Restaurant name |
+| logo_url | string | No | Logo URL |
+| address | string | No | Address |
+| opening_time | string | No | Example 09:00 |
+| closing_time | string | No | Example 23:00 |
+| is_open | boolean | No | true or false |
+| support_phone | string | No | Editable only if verified |
+
+Example Request:
+```json
+{
+  "name": "Biryani House",
+  "logo_url": "https://cdn.example.com/brands/biryani.png",
+  "address": "MG Road",
+  "opening_time": "09:00",
+  "closing_time": "23:00",
+  "is_open": true
+}
+```
+
+Example Response:
+```json
+{
+  "success": true,
+  "message": "Profile updated successfully",
+  "data": {
+    "_id": "65c7f7fbe9f1c3a1b2c3d4e7",
+    "name": "Biryani House",
+    "logo_url": "https://cdn.example.com/brands/biryani.png",
+    "address": "MG Road",
+    "opening_time": "09:00",
+    "closing_time": "23:00",
+    "is_open": true
+  }
+}
+```
+
+Status Codes:
+200 OK
+400 Bad Request
+401 Unauthorized
+403 Forbidden
+404 Not Found
+
+Error Cases:
+Attempt to update restricted fields (phone, role, wallet_balance, ratings, verification flags, timestamps)
+support_phone update when restaurant is not verified
+No valid fields to update
+Invalid payload schema
+
+Notes:
+Unknown fields are ignored. support_phone requires verification.
+
 Payments (Razorpay)
 Endpoint: POST /api/v1/payments/razorpay/order/
 

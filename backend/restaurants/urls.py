@@ -7,4 +7,5 @@ urlpatterns = [
     path("restaurants/<str:restaurant_id>/menu/list/", views.ListMenuView.as_view(), name="menu-list"),
     path("restaurants/recommended/", views.RecommendedRestaurantsView.as_view(), name="restaurants-recommended"),
     path("menu/recommended/", views.RecommendedMenuItemsView.as_view(), name="menu-recommended"),
+    path("restaurant/me/", views.RestaurantMeView.as_view(), name="restaurant-me"),
 ]

@@ -1,8 +1,40 @@
+import logging
 from typing import Optional, List
-from pymongo import ASCENDING
+from pymongo import ASCENDING, ReturnDocument
 
 from core.db import get_db
 from core.utils import utcnow, to_object_id
+
+logger = logging.getLogger(__name__)
+
+RESTAURANT_PROFILE_EDITABLE_FIELDS = {
+    "name",
+    "logo_url",
+    "address",
+    "opening_time",
+    "closing_time",
+    "is_open",
+    "support_phone",
+}
+
+RESTAURANT_PROFILE_BLOCKED_FIELDS = {
+    "_id",
+    "owner_id",
+    "phone",
+    "role",
+    "wallet_balance",
+    "ratings",
+    "average_rating",
+    "total_ratings",
+    "earnings",
+    "is_verified",
+    "support_phone_verified",
+    "is_active",
+    "is_recommended",
+    "created_at",
+    "updated_at",
+    "deleted_at",
+}
 from core.geo_utils import to_point
 
 _index_ready = False
@@ -48,6 +80,14 @@ def get_restaurant(restaurant_id: str):
     if not oid:
         return None
     return db.restaurants.find_one({"_id": oid})
+
+
+def get_restaurant_by_owner(owner_id: str):
+    db = get_db()
+    oid = to_object_id(owner_id)
+    if not oid:
+        return None
+    return db.restaurants.find_one({"owner_id": oid})
 
 
 def add_menu_item(restaurant_id: str, name: str, price: int, is_available: bool = True):
@@ -105,3 +145,20 @@ def list_recommended_menu_items(limit: int = 50):
     db = get_db()
     cursor = db.menu_items.find({"is_available": True, "is_recommended": True}).limit(limit)
     return list(cursor)
+
+
+def update_restaurant_profile(owner_id: str, updates: dict):
+    if not updates:
+        return None
+    db = get_db()
+    oid = to_object_id(owner_id)
+    if not oid:
+        return None
+    updated = db.restaurants.find_one_and_update(
+        {"owner_id": oid},
+        {"$set": updates},
+        return_document=ReturnDocument.AFTER,
+    )
+    if updated:
+        logger.info("restaurant_profile_updated owner_id=%s fields=%s", owner_id, sorted(updates.keys()))
+    return updated

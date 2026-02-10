@@ -7,7 +7,7 @@ from rest_framework import status
 from core.auth import create_access_token
 from core.firebase import get_firebase_app
 from core.utils import serialize_doc
-from users.serializers import FirebaseLoginSerializer, FcmTokenSerializer
+from users.serializers import FirebaseLoginSerializer, FcmTokenSerializer, UserProfileUpdateSerializer
 from users import services as user_services
 from captains import services as captain_services
 
@@ -61,6 +61,49 @@ class MeView(APIView):
         if not user_doc:
             user_doc = user_services.get_user_by_id(request.user.id)
         return Response({"user": serialize_doc(user_doc)})
+
+    # Thunder Client / Postman payload example:
+    # {
+    #   "name": "Asha Rao",
+    #   "email": "asha@example.com",
+    #   "avatar_url": "https://cdn.example.com/u/asha.png",
+    #   "default_address": {"label": "Home", "line1": "MG Road"},
+    #   "preferences": {"language": "en", "dark_mode": false}
+    # }
+    def patch(self, request):
+        role = getattr(request.user, "role", None) or getattr(request, "role", None)
+        if role != "USER":
+            return Response({"detail": "Only USER can update this profile"}, status=status.HTTP_403_FORBIDDEN)
+
+        payload = request.data or {}
+        if not hasattr(payload, "keys"):
+            return Response({"detail": "Invalid payload"}, status=status.HTTP_400_BAD_REQUEST)
+
+        requested = set(payload.keys())
+        blocked = sorted({
+            key for key in requested
+            if key in user_services.USER_PROFILE_BLOCKED_FIELDS or str(key).startswith("_")
+        })
+        if blocked:
+            return Response(
+                {"detail": f"Updates to fields not allowed: {', '.join(blocked)}"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        filtered = {key: payload[key] for key in user_services.USER_PROFILE_EDITABLE_FIELDS if key in payload}
+        if not filtered:
+            return Response({"detail": "No valid fields to update"}, status=status.HTTP_400_BAD_REQUEST)
+
+        serializer = UserProfileUpdateSerializer(data=filtered, partial=True)
+        serializer.is_valid(raise_exception=True)
+        updated = user_services.update_user_profile(request.user.id, serializer.validated_data)
+        if not updated:
+            return Response({"detail": "User not found"}, status=status.HTTP_404_NOT_FOUND)
+        return Response({
+            "success": True,
+            "message": "Profile updated successfully",
+            "data": serialize_doc(updated),
+        })
 
 
 class RegisterFcmTokenView(APIView):

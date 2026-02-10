@@ -13,6 +13,7 @@ from captains.serializers import (
     JobDecisionSerializer,
     VehicleRegisterSerializer,
     GoHomeEnableSerializer,
+    CaptainProfileUpdateSerializer,
 )
 from captains import services
 from core import matching_service
@@ -232,3 +233,48 @@ class CaptainGoHomeDisableView(APIView):
         if not updated:
             return Response({"detail": "Captain not found"}, status=status.HTTP_404_NOT_FOUND)
         return Response({"captain": serialize_doc(updated)})
+
+
+class CaptainMeView(APIView):
+    allowed_roles = ["CAPTAIN"]
+    permission_classes = [IsAuthenticated, RolePermission]
+
+    # Thunder Client / Postman payload example:
+    # {
+    #   "name": "Ravi Kumar",
+    #   "avatar_url": "https://cdn.example.com/captains/ravi.png",
+    #   "vehicle_number": "KA01AB1234",
+    #   "vehicle_type": "BIKE",
+    #   "home_location": {"lat": 12.9716, "lng": 77.5946},
+    #   "bio": "7 years experience"
+    # }
+    def patch(self, request):
+        payload = request.data or {}
+        if not hasattr(payload, "keys"):
+            return Response({"detail": "Invalid payload"}, status=status.HTTP_400_BAD_REQUEST)
+
+        requested = set(payload.keys())
+        blocked = sorted({
+            key for key in requested
+            if key in services.CAPTAIN_PROFILE_BLOCKED_FIELDS or str(key).startswith("_")
+        })
+        if blocked:
+            return Response(
+                {"detail": f"Updates to fields not allowed: {', '.join(blocked)}"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        filtered = {key: payload[key] for key in services.CAPTAIN_PROFILE_EDITABLE_FIELDS if key in payload}
+        if not filtered:
+            return Response({"detail": "No valid fields to update"}, status=status.HTTP_400_BAD_REQUEST)
+
+        serializer = CaptainProfileUpdateSerializer(data=filtered, partial=True)
+        serializer.is_valid(raise_exception=True)
+        updated = services.update_captain_profile(request.user.id, serializer.validated_data)
+        if not updated:
+            return Response({"detail": "Captain not found"}, status=status.HTTP_404_NOT_FOUND)
+        return Response({
+            "success": True,
+            "message": "Profile updated successfully",
+            "data": serialize_doc(updated),
+        })

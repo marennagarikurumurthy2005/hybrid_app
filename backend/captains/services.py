@@ -1,9 +1,56 @@
+import logging
+from pymongo import ReturnDocument
+
 from core.db import get_db
 from core.utils import utcnow, to_object_id
 from core.geo_utils import to_point, haversine_km
 from core.vehicles import is_ev_vehicle
 from notifications import services as notification_services
 from django.conf import settings
+
+logger = logging.getLogger(__name__)
+
+CAPTAIN_PROFILE_EDITABLE_FIELDS = {
+    "name",
+    "avatar_url",
+    "vehicle_number",
+    "vehicle_type",
+    "home_location",
+    "bio",
+}
+
+CAPTAIN_PROFILE_BLOCKED_FIELDS = {
+    "_id",
+    "user_id",
+    "phone",
+    "role",
+    "wallet_balance",
+    "ratings",
+    "average_rating",
+    "total_ratings",
+    "earnings",
+    "is_verified",
+    "verified_at",
+    "verification_reason",
+    "is_online",
+    "is_busy",
+    "is_active",
+    "current_job_id",
+    "current_job_type",
+    "current_job",
+    "batched_order_ids",
+    "go_home_mode",
+    "go_home_activated_at",
+    "go_home_eta_s",
+    "go_home_distance_m",
+    "go_home_updated_at",
+    "location",
+    "last_seen",
+    "last_assigned_at",
+    "created_at",
+    "updated_at",
+    "deleted_at",
+}
 
 
 def ensure_captain_profile(user_id: str):
@@ -190,6 +237,39 @@ def get_vehicle(user_id: str):
         "license_image": captain.get("license_image"),
         "is_verified": captain.get("is_verified", False),
     }
+
+
+def update_captain_profile(user_id: str, updates: dict):
+    if not updates:
+        return None
+    db = get_db()
+    oid = to_object_id(user_id)
+    if not oid:
+        return None
+    existing = db.captains.find_one({"user_id": oid})
+    if not existing:
+        ensure_captain_profile(user_id)
+    if "home_location" in updates:
+        home_location = updates.get("home_location")
+        if home_location:
+            updates["home_location"] = to_point(home_location.get("lat"), home_location.get("lng"))
+        else:
+            updates["home_location"] = None
+    if "vehicle_type" in updates:
+        vehicle_type = updates.get("vehicle_type")
+        if not vehicle_type:
+            updates["vehicle_type"] = None
+            updates["is_ev"] = False
+        else:
+            updates["is_ev"] = bool(is_ev_vehicle(vehicle_type))
+    updated = db.captains.find_one_and_update(
+        {"user_id": oid},
+        {"$set": updates},
+        return_document=ReturnDocument.AFTER,
+    )
+    if updated:
+        logger.info("captain_profile_updated user_id=%s fields=%s", user_id, sorted(updates.keys()))
+    return updated
 
 
 def enable_go_home(user_id: str, lat: float, lng: float):
