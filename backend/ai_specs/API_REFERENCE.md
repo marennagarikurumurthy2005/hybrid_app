@@ -1,106 +1,123 @@
-# GoRides API Reference
+﻿# API Reference
 
-Base URL: `/api/v1/` (Legacy: Maps and Captain endpoints are also available under `/api/`).
-Authentication: JWT via `Authorization: Bearer <jwt>` for protected endpoints.
+Base URL: `/api/v1/`
+Legacy base: `/api/` also routes all endpoints from `maps.urls` and `captains.urls` (same path after the base).
+Authentication: JWT via `Authorization: Bearer <jwt>` unless stated otherwise.
 Roles: USER, CAPTAIN, RESTAURANT, ADMIN.
-Amounts are integer paise unless noted. Timestamps are ISO 8601 (UTC).
+Responses are JSON unless noted (Prometheus metrics are plain text).
+Optional idempotency: `Idempotency-Key` header is honored for POST requests and replays successful responses.
 
-**Public APIs**
-Auth
-Endpoint: POST /api/v1/auth/firebase/
+## Public APIs
 
-Purpose:
-Login with Firebase ID token and issue a GoRides JWT.
-
-Method: POST
-
+### Auth: Firebase Login
+Endpoint: `POST /api/v1/auth/firebase/`
+Purpose: Exchange a Firebase ID token for platform JWTs, creating the user if needed. The provided role is applied when the user has no role yet.
 Authentication: None
+Roles: None
+Required Headers: `Content-Type: application/json`
 
-Headers:
-Content-Type: application/json
+Path Params: None.
+Query Params: None.
 
-Path Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Query Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Request Body:
-| Field | Type | Required | Notes |
+Request Body Schema:
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
 | id_token | string | Yes | Firebase ID token |
 | role | string | No | USER, CAPTAIN, RESTAURANT, ADMIN |
+| device_id | string | No | Device identifier (or `X-Device-Id` header) |
+| device_name | string | No | Device name (or `X-Device-Name` header) |
 
-Example Request:
+Example JSON Request:
 ```json
 {
-  "id_token": "firebase_id_token",
-  "role": "USER"
+  "id_token": "<firebase_id_token>",
+  "role": "USER",
+  "device_id": "device-123"
 }
 ```
 
-Example Response:
+Example JSON Response:
 ```json
 {
-  "token": "<jwt>",
+  "token": "<access_jwt>",
+  "refresh_token": "<refresh_jwt>",
   "user": {
-    "_id": "65c7f7d0e9f1c3a1b2c3d4e5",
-    "phone": "+919999999999",
-    "role": "USER",
-    "created_at": "2026-02-10T10:15:30.000Z"
+    "_id": "<user_id>",
+    "phone": "<phone_number>",
+    "role": "USER"
   }
 }
 ```
 
-Status Codes:
-200 OK
-400 Bad Request
+Possible Errors:
+| Status | Example |
+| --- | --- |
+| 400 | {"detail": "Phone number not found in token"} |
+| 400 | {"id_token": ["This field is required."]} |
 
-Error Cases:
-Invalid or missing id_token
-Phone number not found in token
-
-Notes:
-If the user does not exist, it is created. If role is CAPTAIN, a captain profile is created.
-
-Restaurants & Menu (Public)
-Endpoint: GET /api/v1/restaurants/{restaurant_id}/menu/list/
-
-Purpose:
-List available menu items for a restaurant.
-
-Method: GET
-
+### Auth: Refresh Token
+Endpoint: `POST /api/v1/auth/refresh`
+Purpose: Rotate a refresh token and issue a new access token.
 Authentication: None
+Roles: None
+Required Headers: `Content-Type: application/json`
 
-Headers:
-None
+Path Params: None.
+Query Params: None.
+
+Request Body Schema:
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| refresh_token | string | Yes | Refresh JWT |
+
+Example JSON Request:
+```json
+{
+  "refresh_token": "<refresh_jwt>"
+}
+```
+
+Example JSON Response:
+```json
+{
+  "token": "<access_jwt>",
+  "refresh_token": "<new_refresh_jwt>"
+}
+```
+
+Possible Errors:
+| Status | Example |
+| --- | --- |
+| 401 | {"detail": "Refresh token revoked"} |
+| 401 | {"detail": "Session revoked"} |
+| 404 | {"detail": "User not found"} |
+
+### Restaurants: Menu List
+Endpoint: `GET /api/v1/restaurants/<restaurant_id>/menu/list/`
+Purpose: List menu items for a restaurant.
+Authentication: None
+Roles: None
+Required Headers: None
 
 Path Params:
-| Param | Type | Required | Notes |
-| restaurant_id | string | Yes | Restaurant id |
+| Name | Type | Description |
+| --- | --- | --- |
+| restaurant_id | string | Restaurant identifier |
 
-Query Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
+Query Params: None.
+Request Body Schema: None.
 
-Request Body:
-| Field | Type | Required | Notes |
-| - | - | - | - |
-
-Example Request:
+Example JSON Request:
 ```json
 {}
 ```
 
-Example Response:
+Example JSON Response:
 ```json
 {
   "items": [
     {
-      "_id": "65c7f8a7e9f1c3a1b2c3d4e6",
-      "restaurant_id": "65c7f7fbe9f1c3a1b2c3d4e7",
+      "_id": "<menu_item_id>",
       "name": "Chicken Biryani",
       "price": 25000,
       "is_available": true
@@ -109,105 +126,71 @@ Example Response:
 }
 ```
 
-Status Codes:
-200 OK
+Possible Errors: None (returns empty list when no items match).
 
-Error Cases:
-None (invalid restaurant_id returns empty list)
-
-Notes:
-Public endpoint.
-
-Restaurants (Public)
-Endpoint: GET /api/v1/restaurants/recommended/
-
-Purpose:
-List recommended restaurants.
-
-Method: GET
-
+### Restaurants: Recommended
+Endpoint: `GET /api/v1/restaurants/recommended/`
+Purpose: List recommended restaurants.
 Authentication: None
+Roles: None
+Required Headers: None
 
-Headers:
-None
-
-Path Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
+Path Params: None.
 
 Query Params:
-| Param | Type | Required | Notes |
-| limit | integer | No | Default 50 |
+| Name | Type | Description |
+| --- | --- | --- |
+| limit | integer | Optional. Default 50. |
 
-Request Body:
-| Field | Type | Required | Notes |
-| - | - | - | - |
+Request Body Schema: None.
 
-Example Request:
+Example JSON Request:
 ```json
 {}
 ```
 
-Example Response:
+Example JSON Response:
 ```json
 {
   "restaurants": [
     {
-      "_id": "65c7f7fbe9f1c3a1b2c3d4e7",
+      "_id": "<restaurant_id>",
       "name": "Biryani House",
-      "address": "MG Road",
       "is_recommended": true
     }
   ]
 }
 ```
 
-Status Codes:
-200 OK
+Possible Errors: None.
 
-Error Cases:
-None
-
-Notes:
-Public endpoint.
-
-Menu (Public)
-Endpoint: GET /api/v1/menu/recommended/
-
-Purpose:
-List recommended menu items across restaurants.
-
-Method: GET
-
+### Menu: Recommended Items
+Endpoint: `GET /api/v1/menu/recommended/`
+Purpose: List recommended menu items across restaurants.
 Authentication: None
+Roles: None
+Required Headers: None
 
-Headers:
-None
-
-Path Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
+Path Params: None.
 
 Query Params:
-| Param | Type | Required | Notes |
-| limit | integer | No | Default 50 |
+| Name | Type | Description |
+| --- | --- | --- |
+| limit | integer | Optional. Default 50. |
 
-Request Body:
-| Field | Type | Required | Notes |
-| - | - | - | - |
+Request Body Schema: None.
 
-Example Request:
+Example JSON Request:
 ```json
 {}
 ```
 
-Example Response:
+Example JSON Response:
 ```json
 {
   "items": [
     {
-      "_id": "65c7f8a7e9f1c3a1b2c3d4e6",
-      "restaurant_id": "65c7f7fbe9f1c3a1b2c3d4e7",
+      "_id": "<menu_item_id>",
       "name": "Paneer Tikka",
       "price": 18000,
       "is_recommended": true
@@ -216,489 +199,274 @@ Example Response:
 }
 ```
 
-Status Codes:
-200 OK
+Possible Errors: None.
 
-Error Cases:
-None
-
-Notes:
-Public endpoint.
-
-Recommendations (Public)
-Endpoint: GET /api/v1/recommendations/
-
-Purpose:
-List legacy recommendations feed.
-
-Method: GET
-
+### Recommendations: Public Feed
+Endpoint: `GET /api/v1/recommendations/`
+Purpose: List legacy recommendation entries visible to all users.
 Authentication: None
+Roles: None
+Required Headers: None
 
-Headers:
-None
+Path Params: None.
+Query Params: None.
+Request Body Schema: None.
 
-Path Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Query Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Request Body:
-| Field | Type | Required | Notes |
-| - | - | - | - |
-
-Example Request:
+Example JSON Request:
 ```json
 {}
 ```
 
-Example Response:
+Example JSON Response:
 ```json
 {
   "recommendations": [
     {
-      "_id": "65c7fb2de9f1c3a1b2c3d4f0",
+      "_id": "<recommendation_id>",
       "type": "RESTAURANT",
-      "reference_id": "65c7f7fbe9f1c3a1b2c3d4e7",
+      "reference_id": "<restaurant_id>",
       "title": "Top Rated",
-      "description": "Chef specials",
-      "created_at": "2026-02-10T10:20:00.000Z"
+      "description": "Chef specials"
     }
   ]
 }
 ```
 
-Status Codes:
-200 OK
+Possible Errors: None.
 
-Error Cases:
-None
+## Shared Authenticated APIs
 
-Notes:
-Public endpoint.
+### Auth: Logout
+Endpoint: `POST /api/v1/auth/logout`
+Purpose: Revoke the current access token and optionally revoke the refresh token.
+Authentication: JWT
+Roles: Any authenticated
+Required Headers: `Authorization: Bearer <jwt>`, `Content-Type: application/json`
 
-**Shared Authenticated APIs**
-Users
-Endpoint: GET /api/v1/users/me/
+Path Params: None.
+Query Params: None.
 
-Purpose:
-Fetch the authenticated user profile.
+Request Body Schema:
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| refresh_token | string | No | Refresh JWT to revoke |
 
-Method: GET
+Example JSON Request:
+```json
+{
+  "refresh_token": "<refresh_jwt>"
+}
+```
 
-Authentication: JWT (USER/CAPTAIN/RESTAURANT/ADMIN)
+Example JSON Response:
+```json
+{
+  "success": true
+}
+```
 
-Headers:
-Authorization: Bearer <jwt>
+Possible Errors:
+| Status | Example |
+| --- | --- |
+| 401 | {"detail": "Invalid token"} |
 
-Path Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
+### Users: Get Current User
+Endpoint: `GET /api/v1/users/me/`
+Purpose: Fetch the authenticated user's profile document.
+Authentication: JWT
+Roles: Any authenticated
+Required Headers: `Authorization: Bearer <jwt>`
 
-Query Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
+Path Params: None.
+Query Params: None.
+Request Body Schema: None.
 
-Request Body:
-| Field | Type | Required | Notes |
-| - | - | - | - |
-
-Example Request:
+Example JSON Request:
 ```json
 {}
 ```
 
-Example Response:
+Example JSON Response:
 ```json
 {
   "user": {
-    "_id": "65c7f7d0e9f1c3a1b2c3d4e5",
-    "phone": "+919999999999",
-    "role": "USER",
-    "wallet_balance": 12000,
-    "reward_points": 150
+    "_id": "<user_id>",
+    "phone": "<phone_number>",
+    "role": "USER"
   }
 }
 ```
 
-Status Codes:
-200 OK
-401 Unauthorized
+Possible Errors:
+| Status | Example |
+| --- | --- |
+| 401 | {"detail": "Authentication credentials were not provided"} |
 
-Error Cases:
-Invalid or missing JWT
+### Users: Register FCM Token
+Endpoint: `POST /api/v1/users/fcm-token/`
+Purpose: Register or update an FCM token for push notifications.
+Authentication: JWT
+Roles: Any authenticated
+Required Headers: `Authorization: Bearer <jwt>`, `Content-Type: application/json`
 
-Notes:
-Returns the current user document.
+Path Params: None.
+Query Params: None.
 
-Users
-Endpoint: POST /api/v1/users/fcm-token/
-
-Purpose:
-Register or update FCM device token for push notifications.
-
-Method: POST
-
-Authentication: JWT (USER/CAPTAIN/RESTAURANT/ADMIN)
-
-Headers:
-Content-Type: application/json
-Authorization: Bearer <jwt>
-
-Path Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Query Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Request Body:
-| Field | Type | Required | Notes |
+Request Body Schema:
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
 | fcm_token | string | Yes | Device FCM token |
 
-Example Request:
+Example JSON Request:
 ```json
 {
-  "fcm_token": "fcm_device_token"
+  "fcm_token": "<fcm_token>"
 }
 ```
 
-Example Response:
+Example JSON Response:
 ```json
 {
   "user": {
-    "_id": "65c7f7d0e9f1c3a1b2c3d4e5",
-    "fcm_token": "fcm_device_token"
+    "_id": "<user_id>",
+    "fcm_token": "<fcm_token>"
   }
 }
 ```
 
-Status Codes:
-200 OK
-401 Unauthorized
+Possible Errors:
+| Status | Example |
+| --- | --- |
+| 400 | {"fcm_token": ["This field is required."]} |
+| 401 | {"detail": "Authentication credentials were not provided"} |
 
-Error Cases:
-Invalid or missing JWT
+### Users: List Sessions
+Endpoint: `GET /api/v1/users/sessions`
+Purpose: List active refresh sessions for the authenticated user.
+Authentication: JWT
+Roles: Any authenticated
+Required Headers: `Authorization: Bearer <jwt>`
 
-Notes:
-Used by all roles for notifications.
+Path Params: None.
+Query Params: None.
+Request Body Schema: None.
 
-🔹 Profile Management APIs
-Users
-Endpoint: PATCH /api/v1/users/me/
+Example JSON Request:
+```json
+{}
+```
 
-Purpose:
-Update non-sensitive user profile fields.
-
-Method: PATCH
-
-Authentication: JWT (USER)
-
-Headers:
-Content-Type: application/json
-Authorization: Bearer <jwt>
-
-Path Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Query Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Request Body:
-| Field | Type | Required | Notes |
-| name | string | No | Display name |
-| email | string | No | Must be valid email |
-| avatar_url | string | No | Avatar image URL |
-| default_address | object | No | Free-form address object |
-| preferences | object | No | Free-form preferences |
-
-Example Request:
+Example JSON Response:
 ```json
 {
-  "name": "Asha Rao",
-  "email": "asha@example.com",
-  "avatar_url": "https://cdn.example.com/u/asha.png",
-  "default_address": {"label": "Home", "line1": "MG Road"},
-  "preferences": {"language": "en"}
+  "sessions": [
+    {
+      "device_id": "device-123",
+      "device_name": "Pixel 7",
+      "ip_address": "203.0.113.1"
+    }
+  ]
 }
 ```
 
-Example Response:
+Possible Errors:
+| Status | Example |
+| --- | --- |
+| 401 | {"detail": "Authentication credentials were not provided"} |
+
+### Cancellation: Policy
+Endpoint: `GET /api/v1/cancel/policy`
+Purpose: Retrieve the current cancellation policy configuration.
+Authentication: JWT
+Roles: Any authenticated
+Required Headers: `Authorization: Bearer <jwt>`
+
+Path Params: None.
+Query Params: None.
+Request Body Schema: None.
+
+Example JSON Request:
+```json
+{}
+```
+
+Example JSON Response:
 ```json
 {
-  "success": true,
-  "message": "Profile updated successfully",
-  "data": {
-    "_id": "65c7f7d0e9f1c3a1b2c3d4e5",
-    "name": "Asha Rao",
-    "email": "asha@example.com",
-    "avatar_url": "https://cdn.example.com/u/asha.png",
-    "default_address": {"label": "Home", "line1": "MG Road"},
-    "preferences": {"language": "en"}
+  "policy": {
+    "window_min": 5,
+    "fee_pct": 0.1
   }
 }
 ```
 
-Status Codes:
-200 OK
-400 Bad Request
-401 Unauthorized
-403 Forbidden
+Possible Errors:
+| Status | Example |
+| --- | --- |
+| 401 | {"detail": "Authentication credentials were not provided"} |
 
-Error Cases:
-Attempt to update restricted fields (phone, role, wallet_balance, ratings, verification flags, timestamps)
-No valid fields to update
-Invalid payload schema
+### Payments: Razorpay Create Order
+Endpoint: `POST /api/v1/payments/razorpay/order/`
+Purpose: Create a Razorpay order for a payment amount.
+Authentication: JWT
+Roles: Any authenticated
+Required Headers: `Authorization: Bearer <jwt>`, `Content-Type: application/json`
 
-Notes:
-Unknown fields are ignored.
+Path Params: None.
+Query Params: None.
 
-Captains
-Endpoint: PATCH /api/v1/captain/me/
-
-Purpose:
-Update non-sensitive captain profile fields.
-
-Method: PATCH
-
-Authentication: JWT (CAPTAIN)
-
-Headers:
-Content-Type: application/json
-Authorization: Bearer <jwt>
-
-Path Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Query Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Request Body:
-| Field | Type | Required | Notes |
-| name | string | No | Display name |
-| avatar_url | string | No | Avatar image URL |
-| vehicle_number | string | No | Vehicle number |
-| vehicle_type | string | No | Normalized vehicle type |
-| home_location | object | No | {lat, lng} |
-| bio | string | No | Short bio |
-
-Example Request:
-```json
-{
-  "name": "Ravi Kumar",
-  "vehicle_number": "KA01AB1234",
-  "vehicle_type": "BIKE",
-  "home_location": {"lat": 12.9716, "lng": 77.5946},
-  "bio": "7 years experience"
-}
-```
-
-Example Response:
-```json
-{
-  "success": true,
-  "message": "Profile updated successfully",
-  "data": {
-    "user_id": "65c7f7d0e9f1c3a1b2c3d4e8",
-    "name": "Ravi Kumar",
-    "vehicle_number": "KA01AB1234",
-    "vehicle_type": "BIKE",
-    "home_location": {"type": "Point", "coordinates": [77.5946, 12.9716]},
-    "bio": "7 years experience"
-  }
-}
-```
-
-Status Codes:
-200 OK
-400 Bad Request
-401 Unauthorized
-403 Forbidden
-
-Error Cases:
-Attempt to update restricted fields (phone, role, wallet_balance, ratings, verification flags, timestamps)
-No valid fields to update
-Invalid payload schema
-
-Notes:
-Unknown fields are ignored. Vehicle type is normalized.
-
-Restaurants
-Endpoint: PATCH /api/v1/restaurant/me/
-
-Purpose:
-Update non-sensitive restaurant profile fields.
-
-Method: PATCH
-
-Authentication: JWT (RESTAURANT)
-
-Headers:
-Content-Type: application/json
-Authorization: Bearer <jwt>
-
-Path Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Query Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Request Body:
-| Field | Type | Required | Notes |
-| name | string | No | Restaurant name |
-| logo_url | string | No | Logo URL |
-| address | string | No | Address |
-| opening_time | string | No | Example 09:00 |
-| closing_time | string | No | Example 23:00 |
-| is_open | boolean | No | true or false |
-| support_phone | string | No | Editable only if verified |
-
-Example Request:
-```json
-{
-  "name": "Biryani House",
-  "logo_url": "https://cdn.example.com/brands/biryani.png",
-  "address": "MG Road",
-  "opening_time": "09:00",
-  "closing_time": "23:00",
-  "is_open": true
-}
-```
-
-Example Response:
-```json
-{
-  "success": true,
-  "message": "Profile updated successfully",
-  "data": {
-    "_id": "65c7f7fbe9f1c3a1b2c3d4e7",
-    "name": "Biryani House",
-    "logo_url": "https://cdn.example.com/brands/biryani.png",
-    "address": "MG Road",
-    "opening_time": "09:00",
-    "closing_time": "23:00",
-    "is_open": true
-  }
-}
-```
-
-Status Codes:
-200 OK
-400 Bad Request
-401 Unauthorized
-403 Forbidden
-404 Not Found
-
-Error Cases:
-Attempt to update restricted fields (phone, role, wallet_balance, ratings, verification flags, timestamps)
-support_phone update when restaurant is not verified
-No valid fields to update
-Invalid payload schema
-
-Notes:
-Unknown fields are ignored. support_phone requires verification.
-
-Payments (Razorpay)
-Endpoint: POST /api/v1/payments/razorpay/order/
-
-Purpose:
-Create a Razorpay order for a payment amount.
-
-Method: POST
-
-Authentication: JWT (USER/CAPTAIN/RESTAURANT/ADMIN)
-
-Headers:
-Content-Type: application/json
-Authorization: Bearer <jwt>
-
-Path Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Query Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Request Body:
-| Field | Type | Required | Notes |
-| amount | integer | Yes | Amount in paise |
-| currency | string | No | Default INR |
+Request Body Schema:
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| amount | integer | Yes | Amount in smallest currency unit |
+| currency | string | No | Default `INR` |
 | receipt | string | Yes | Receipt reference |
 
-Example Request:
+Example JSON Request:
 ```json
 {
   "amount": 15000,
   "currency": "INR",
-  "receipt": "order_65c7f9b3e9f1c3a1b2c3d4f1"
+  "receipt": "order_123"
 }
 ```
 
-Example Response:
+Example JSON Response:
 ```json
 {
   "razorpay_order": {
     "id": "order_abc123",
     "amount": 15000,
     "currency": "INR",
-    "status": "created",
-    "receipt": "order_65c7f9b3e9f1c3a1b2c3d4f1"
+    "receipt": "order_123"
   }
 }
 ```
 
-Status Codes:
-201 Created
-400 Bad Request
-401 Unauthorized
+Possible Errors:
+| Status | Example |
+| --- | --- |
+| 400 | {"detail": "Invalid amount"} |
+| 401 | {"detail": "Authentication credentials were not provided"} |
 
-Error Cases:
-Razorpay keys not configured
-Invalid amount
+### Payments: Razorpay Verify
+Endpoint: `POST /api/v1/payments/razorpay/verify/`
+Purpose: Verify a Razorpay payment signature.
+Authentication: JWT
+Roles: Any authenticated
+Required Headers: `Authorization: Bearer <jwt>`, `Content-Type: application/json`
 
-Notes:
-Used by both food orders and rides when payment_amount > 0.
+Path Params: None.
+Query Params: None.
 
-Payments (Razorpay)
-Endpoint: POST /api/v1/payments/razorpay/verify/
-
-Purpose:
-Verify a Razorpay payment signature.
-
-Method: POST
-
-Authentication: JWT (USER/CAPTAIN/RESTAURANT/ADMIN)
-
-Headers:
-Content-Type: application/json
-Authorization: Bearer <jwt>
-
-Path Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Query Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Request Body:
-| Field | Type | Required | Notes |
+Request Body Schema:
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
 | razorpay_order_id | string | Yes | Razorpay order id |
 | razorpay_payment_id | string | Yes | Razorpay payment id |
 | razorpay_signature | string | Yes | Razorpay signature |
 
-Example Request:
+Example JSON Request:
 ```json
 {
   "razorpay_order_id": "order_abc123",
@@ -707,53 +475,37 @@ Example Request:
 }
 ```
 
-Example Response:
+Example JSON Response:
 ```json
 {
   "verified": true
 }
 ```
 
-Status Codes:
-200 OK
-400 Bad Request
-401 Unauthorized
+Possible Errors:
+| Status | Example |
+| --- | --- |
+| 400 | {"detail": "Signature verification failed"} |
+| 401 | {"detail": "Authentication credentials were not provided"} |
 
-Error Cases:
-Signature verification failed
+### Pricing: Calculate Surge
+Endpoint: `POST /api/v1/pricing/calculate/`
+Purpose: Calculate surge multiplier for a location and job type.
+Authentication: JWT
+Roles: USER, CAPTAIN, RESTAURANT, ADMIN
+Required Headers: `Authorization: Bearer <jwt>`, `Content-Type: application/json`
 
-Notes:
-Typically used internally by order/ride verification endpoints.
+Path Params: None.
+Query Params: None.
 
-Pricing & Surge
-Endpoint: POST /api/v1/pricing/calculate/
-
-Purpose:
-Calculate surge multiplier for a location and job type.
-
-Method: POST
-
-Authentication: JWT (USER/CAPTAIN/RESTAURANT/ADMIN)
-
-Headers:
-Content-Type: application/json
-Authorization: Bearer <jwt>
-
-Path Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Query Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Request Body:
-| Field | Type | Required | Notes |
-| job_type | string | Yes | ORDER or RIDE |
+Request Body Schema:
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| job_type | string | Yes | `ORDER` or `RIDE` |
 | lat | number | Yes | Latitude |
 | lng | number | Yes | Longitude |
 
-Example Request:
+Example JSON Request:
 ```json
 {
   "job_type": "RIDE",
@@ -762,59 +514,45 @@ Example Request:
 }
 ```
 
-Example Response:
+Example JSON Response:
 ```json
 {
   "surge": {
     "surge_multiplier": 1.2,
-    "demand_score": 0.78,
-    "created_at": "2026-02-10T10:22:10.000Z"
+    "demand": 5,
+    "supply": 12,
+    "ratio": 0.42
   }
 }
 ```
 
-Status Codes:
-200 OK
-400 Bad Request
-401 Unauthorized
+Possible Errors:
+| Status | Example |
+| --- | --- |
+| 400 | {"detail": "Invalid job_type"} |
+| 401 | {"detail": "Authentication credentials were not provided"} |
 
-Error Cases:
-Invalid job_type
+### Maps: Route
+Endpoint: `POST /api/v1/maps/route`
+Purpose: Get route details between two points.
+Authentication: JWT
+Roles: USER, CAPTAIN, RESTAURANT, ADMIN
+Required Headers: `Authorization: Bearer <jwt>`, `Content-Type: application/json`
+Aliases: `/api/maps/route`
 
-Notes:
-Used by ride and food pricing engines.
+Path Params: None.
+Query Params: None.
 
-Maps & Routing
-Endpoint: POST /api/v1/maps/route
-
-Purpose:
-Get route details between two points using Google Maps.
-
-Method: POST
-
-Authentication: JWT (USER/CAPTAIN/RESTAURANT/ADMIN)
-
-Headers:
-Content-Type: application/json
-Authorization: Bearer <jwt>
-
-Path Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Query Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Request Body:
-| Field | Type | Required | Notes |
+Request Body Schema:
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
 | origin_lat | number | Yes | Latitude |
 | origin_lng | number | Yes | Longitude |
 | destination_lat | number | Yes | Latitude |
 | destination_lng | number | Yes | Longitude |
-| mode | string | No | driving, walking, two_wheeler |
+| mode | string | No | Default `driving` |
 
-Example Request:
+Example JSON Request:
 ```json
 {
   "origin_lat": 12.9716,
@@ -825,59 +563,44 @@ Example Request:
 }
 ```
 
-Example Response:
+Example JSON Response:
 ```json
 {
   "route": {
     "distance_m": 5200,
     "duration_s": 960,
-    "polyline": "_p~iF~ps|U_ulLnnqC_mqNvxq`@"
+    "polyline": "<encoded_polyline>"
   }
 }
 ```
 
-Status Codes:
-200 OK
-400 Bad Request
-401 Unauthorized
+Possible Errors:
+| Status | Example |
+| --- | --- |
+| 400 | {"detail": "Google Maps error"} |
+| 401 | {"detail": "Authentication credentials were not provided"} |
 
-Error Cases:
-Google Maps error
+### Maps: ETA
+Endpoint: `POST /api/v1/maps/eta`
+Purpose: Get ETA details between two points.
+Authentication: JWT
+Roles: USER, CAPTAIN, RESTAURANT, ADMIN
+Required Headers: `Authorization: Bearer <jwt>`, `Content-Type: application/json`
+Aliases: `/api/maps/eta`
 
-Notes:
-Also available under legacy base `/api/maps/route`.
+Path Params: None.
+Query Params: None.
 
-Maps & Routing
-Endpoint: POST /api/v1/maps/eta
-
-Purpose:
-Get ETA between two points using Google Maps.
-
-Method: POST
-
-Authentication: JWT (USER/CAPTAIN/RESTAURANT/ADMIN)
-
-Headers:
-Content-Type: application/json
-Authorization: Bearer <jwt>
-
-Path Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Query Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Request Body:
-| Field | Type | Required | Notes |
+Request Body Schema:
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
 | origin_lat | number | Yes | Latitude |
 | origin_lng | number | Yes | Longitude |
 | destination_lat | number | Yes | Latitude |
 | destination_lng | number | Yes | Longitude |
-| mode | string | No | driving, walking, two_wheeler |
+| mode | string | No | Default `driving` |
 
-Example Request:
+Example JSON Request:
 ```json
 {
   "origin_lat": 12.9716,
@@ -887,7 +610,7 @@ Example Request:
 }
 ```
 
-Example Response:
+Example JSON Response:
 ```json
 {
   "eta": {
@@ -898,160 +621,111 @@ Example Response:
 }
 ```
 
-Status Codes:
-200 OK
-400 Bad Request
-401 Unauthorized
+Possible Errors:
+| Status | Example |
+| --- | --- |
+| 400 | {"detail": "Google Maps error"} |
+| 401 | {"detail": "Authentication credentials were not provided"} |
 
-Error Cases:
-Google Maps error
+### Maps: Nearby Captains
+Endpoint: `GET /api/v1/captain/nearby`
+Purpose: Find nearby captains for a location.
+Authentication: JWT
+Roles: USER, ADMIN
+Required Headers: `Authorization: Bearer <jwt>`
+Aliases: `/api/captain/nearby`
 
-Notes:
-Also available under legacy base `/api/maps/eta`.
-
-Maps & Routing
-Endpoint: GET /api/v1/captain/nearby
-
-Purpose:
-Find nearby captains for a location.
-
-Method: GET
-
-Authentication: JWT (USER/ADMIN)
-
-Headers:
-Authorization: Bearer <jwt>
-
-Path Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
+Path Params: None.
 
 Query Params:
-| Param | Type | Required | Notes |
-| lat | number | Yes | Latitude |
-| lng | number | Yes | Longitude |
-| radius_m | integer | No | Default 5000 (100 to 20000) |
+| Name | Type | Description |
+| --- | --- | --- |
+| lat | number | Latitude |
+| lng | number | Longitude |
+| radius_m | integer | Optional. Default 5000 (min 100, max 20000). |
 
-Request Body:
-| Field | Type | Required | Notes |
-| - | - | - | - |
+Request Body Schema: None.
 
-Example Request:
+Example JSON Request:
 ```json
 {}
 ```
 
-Example Response:
+Example JSON Response:
 ```json
 {
   "captains": [
     {
-      "_id": "65c8001de9f1c3a1b2c3d4f2",
-      "user_id": "65c7f7d0e9f1c3a1b2c3d4e8",
-      "location": {"type": "Point", "coordinates": [77.5946, 12.9716]},
-      "vehicle_type": "BIKE_PETROL",
+      "_id": "<captain_id>",
+      "vehicle_type": "BIKE",
       "is_online": true
     }
   ]
 }
 ```
 
-Status Codes:
-200 OK
-400 Bad Request
-401 Unauthorized
+Possible Errors:
+| Status | Example |
+| --- | --- |
+| 400 | {"detail": "Invalid coordinates"} |
+| 401 | {"detail": "Authentication credentials were not provided"} |
 
-Error Cases:
-Invalid coordinates
+### Routing: Optimize Route
+Endpoint: `POST /api/v1/route/optimize/`
+Purpose: Optimize the order of multiple points for routing.
+Authentication: JWT
+Roles: USER, CAPTAIN, RESTAURANT, ADMIN
+Required Headers: `Authorization: Bearer <jwt>`, `Content-Type: application/json`
 
-Notes:
-Also available under legacy base `/api/captain/nearby`.
+Path Params: None.
+Query Params: None.
 
-Routing
-Endpoint: POST /api/v1/route/optimize/
-
-Purpose:
-Optimize the order of multiple points for routing.
-
-Method: POST
-
-Authentication: JWT (USER/CAPTAIN/RESTAURANT/ADMIN)
-
-Headers:
-Content-Type: application/json
-Authorization: Bearer <jwt>
-
-Path Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Query Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Request Body:
-| Field | Type | Required | Notes |
-| points | array<object> | Yes | [{lat, lng}] |
+Request Body Schema:
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| points | array<object> | Yes | Array of `{lat, lng}` |
 | clusters | integer | No | 1 to 10 |
 
-Example Request:
+Example JSON Request:
 ```json
 {
   "points": [
     {"lat": 12.97, "lng": 77.59},
-    {"lat": 12.95, "lng": 77.60},
-    {"lat": 12.96, "lng": 77.58}
+    {"lat": 12.95, "lng": 77.6}
   ],
   "clusters": 2
 }
 ```
 
-Example Response:
+Example JSON Response:
 ```json
 {
   "optimized": [
     {"lat": 12.97, "lng": 77.59},
-    {"lat": 12.96, "lng": 77.58},
-    {"lat": 12.95, "lng": 77.60}
+    {"lat": 12.95, "lng": 77.6}
   ]
 }
 ```
 
-Status Codes:
-200 OK
-400 Bad Request
-401 Unauthorized
+Possible Errors:
+| Status | Example |
+| --- | --- |
+| 400 | {"points": ["This field is required."]} |
+| 401 | {"detail": "Authentication credentials were not provided"} |
 
-Error Cases:
-Invalid points
+### ETA: Predict
+Endpoint: `POST /api/v1/eta/predict`
+Purpose: Predict ETA with prep time and traffic/weather factors.
+Authentication: JWT
+Roles: USER, CAPTAIN, RESTAURANT, ADMIN
+Required Headers: `Authorization: Bearer <jwt>`, `Content-Type: application/json`
 
-Notes:
-Uses clustering when many points are provided.
+Path Params: None.
+Query Params: None.
 
-ETA
-Endpoint: POST /api/v1/eta/predict
-
-Purpose:
-Predict ETA with prep time, batch size, and traffic/weather factors.
-
-Method: POST
-
-Authentication: JWT (USER/CAPTAIN/RESTAURANT/ADMIN)
-
-Headers:
-Content-Type: application/json
-Authorization: Bearer <jwt>
-
-Path Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Query Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Request Body:
-| Field | Type | Required | Notes |
+Request Body Schema:
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
 | origin_lat | number | Yes | Latitude |
 | origin_lng | number | Yes | Longitude |
 | destination_lat | number | Yes | Latitude |
@@ -1061,7 +735,7 @@ Request Body:
 | traffic_factor | number | No | Default 1.0 |
 | weather_factor | number | No | Default 1.0 |
 
-Example Request:
+Example JSON Request:
 ```json
 {
   "origin_lat": 12.9716,
@@ -1075,398 +749,77 @@ Example Request:
 }
 ```
 
-Example Response:
+Example JSON Response:
 ```json
 {
   "eta": {
-    "base_duration_s": 900,
-    "adjusted_duration_s": 1710,
-    "distance_m": 5200,
-    "prep_time_min": 15,
-    "batch_size": 2
+    "duration_s": 1200,
+    "prep_time_min": 15
   }
 }
 ```
 
-Status Codes:
-200 OK
-400 Bad Request
-401 Unauthorized
+Possible Errors:
+| Status | Example |
+| --- | --- |
+| 400 | {"origin_lat": ["This field is required."]} |
+| 401 | {"detail": "Authentication credentials were not provided"} |
 
-Error Cases:
-Invalid coordinates
+### Campaigns: Active
+Endpoint: `GET /api/v1/campaigns/active`
+Purpose: List active promotions or campaigns.
+Authentication: JWT
+Roles: Any authenticated
+Required Headers: `Authorization: Bearer <jwt>`
 
-Notes:
-Used by SLA/ETA and dispatch.
-
-Trust & Safety
-Endpoint: POST /api/v1/trust/device/register
-
-Purpose:
-Register device fingerprint and metadata for trust scoring.
-
-Method: POST
-
-Authentication: JWT (USER/CAPTAIN/RESTAURANT/ADMIN)
-
-Headers:
-Content-Type: application/json
-Authorization: Bearer <jwt>
-
-Path Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
+Path Params: None.
 
 Query Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
+| Name | Type | Description |
+| --- | --- | --- |
+| limit | integer | Optional. Default 50. |
 
-Request Body:
-| Field | Type | Required | Notes |
-| device_id | string | Yes | Device identifier |
-| platform | string | No | android, ios, web |
-| fingerprint | string | No | Device fingerprint hash |
-| ip | string | No | IP address |
-| meta | object | No | GPS and device metadata |
+Request Body Schema: None.
 
-Example Request:
-```json
-{
-  "device_id": "device-123",
-  "platform": "android",
-  "fingerprint": "hash",
-  "ip": "203.0.113.1",
-  "meta": {"mock_location": false, "location_speed_kmh": 34}
-}
-```
-
-Example Response:
-```json
-{
-  "device": {
-    "_id": "65c802dfe9f1c3a1b2c3d4f3",
-    "user_id": "65c7f7d0e9f1c3a1b2c3d4e5",
-    "device_id": "device-123",
-    "platform": "android",
-    "created_at": "2026-02-10T10:30:00.000Z"
-  }
-}
-```
-
-Status Codes:
-200 OK
-400 Bad Request
-401 Unauthorized
-
-Error Cases:
-Invalid payload
-
-Notes:
-Used for spoofing and duplicate-account detection.
-
-Cancellation & Compensation
-Endpoint: GET /api/v1/cancel/policy
-
-Purpose:
-Fetch current cancellation policy percentages.
-
-Method: GET
-
-Authentication: JWT (USER/CAPTAIN/RESTAURANT/ADMIN)
-
-Headers:
-Authorization: Bearer <jwt>
-
-Path Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Query Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Request Body:
-| Field | Type | Required | Notes |
-| - | - | - | - |
-
-Example Request:
+Example JSON Request:
 ```json
 {}
 ```
 
-Example Response:
-```json
-{
-  "policy": {
-    "user_cancel_before_assign_refund_pct": 1.0,
-    "user_cancel_after_assign_refund_pct": 0.5,
-    "captain_cancel_penalty_pct": 0.1,
-    "late_delivery_refund_pct": 0.2,
-    "no_show_fee_pct": 0.1
-  }
-}
-```
-
-Status Codes:
-200 OK
-401 Unauthorized
-
-Error Cases:
-Invalid or missing JWT
-
-Notes:
-Policy is used by cancel/order and cancel/ride.
-
-Chat & Calling
-Endpoint: GET /api/v1/chat/history/{room_id}
-
-Purpose:
-Get recent chat messages for a room.
-
-Method: GET
-
-Authentication: JWT (USER/CAPTAIN/RESTAURANT/ADMIN)
-
-Headers:
-Authorization: Bearer <jwt>
-
-Path Params:
-| Param | Type | Required | Notes |
-| room_id | string | Yes | Chat room id |
-
-Query Params:
-| Param | Type | Required | Notes |
-| limit | integer | No | Default 50, max 200 |
-
-Request Body:
-| Field | Type | Required | Notes |
-| - | - | - | - |
-
-Example Request:
-```json
-{}
-```
-
-Example Response:
-```json
-{
-  "messages": [
-    {
-      "_id": "65c80544e9f1c3a1b2c3d4f4",
-      "room_id": "room_123",
-      "sender_id": "65c7f7d0e9f1c3a1b2c3d4e5",
-      "sender_role": "USER",
-      "text": "On my way",
-      "created_at": "2026-02-10T10:32:00.000Z"
-    }
-  ]
-}
-```
-
-Status Codes:
-200 OK
-401 Unauthorized
-403 Forbidden
-
-Error Cases:
-Not a participant of the room
-
-Notes:
-Only room participants can access history.
-
-Chat & Calling
-Endpoint: GET /api/v1/chat/call/{room_id}
-
-Purpose:
-Fetch masked calling numbers for a chat room.
-
-Method: GET
-
-Authentication: JWT (USER/CAPTAIN/RESTAURANT)
-
-Headers:
-Authorization: Bearer <jwt>
-
-Path Params:
-| Param | Type | Required | Notes |
-| room_id | string | Yes | Chat room id |
-
-Query Params:
-| Param | Type | Required | Notes |
-| callee_id | string | Yes | Target user/captain/restaurant id |
-
-Request Body:
-| Field | Type | Required | Notes |
-| - | - | - | - |
-
-Example Request:
-```json
-{}
-```
-
-Example Response:
-```json
-{
-  "call": {
-    "caller": "+91-70000-00001",
-    "callee": "+91-70000-00002",
-    "room_id": "room_123"
-  }
-}
-```
-
-Status Codes:
-200 OK
-400 Bad Request
-401 Unauthorized
-403 Forbidden
-
-Error Cases:
-callee_id missing
-Not a participant of the room
-
-Notes:
-Masked numbers are generated by backend policy.
-
-Campaigns
-Endpoint: GET /api/v1/campaigns/active
-
-Purpose:
-List active marketing campaigns.
-
-Method: GET
-
-Authentication: JWT (USER/CAPTAIN/RESTAURANT/ADMIN)
-
-Headers:
-Authorization: Bearer <jwt>
-
-Path Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Query Params:
-| Param | Type | Required | Notes |
-| limit | integer | No | Default 50 |
-
-Request Body:
-| Field | Type | Required | Notes |
-| - | - | - | - |
-
-Example Request:
-```json
-{}
-```
-
-Example Response:
+Example JSON Response:
 ```json
 {
   "campaigns": [
     {
-      "_id": "65c8065de9f1c3a1b2c3d4f5",
-      "title": "EV Bonus Week",
-      "active": true,
-      "starts_at": "2026-02-10T00:00:00.000Z",
-      "ends_at": "2026-02-17T00:00:00.000Z"
+      "_id": "<campaign_id>",
+      "title": "Festival Promo"
     }
   ]
 }
 ```
 
-Status Codes:
-200 OK
-401 Unauthorized
+Possible Errors:
+| Status | Example |
+| --- | --- |
+| 401 | {"detail": "Authentication credentials were not provided"} |
 
-Error Cases:
-Invalid or missing JWT
+### Vehicles: Rules (Read)
+Endpoint: `GET /api/v1/vehicle/rules`
+Purpose: Fetch vehicle rules used by matching and rewards logic.
+Authentication: JWT
+Roles: Any authenticated
+Required Headers: `Authorization: Bearer <jwt>`
 
-Notes:
-Campaign rules are applied during checkout and ride creation.
+Path Params: None.
+Query Params: None.
+Request Body Schema: None.
 
-Captain Stats
-Endpoint: GET /api/v1/captain/{captain_id}/stats/
-
-Purpose:
-Get captain rating stats and aggregates.
-
-Method: GET
-
-Authentication: JWT (USER/CAPTAIN/RESTAURANT/ADMIN)
-
-Headers:
-Authorization: Bearer <jwt>
-
-Path Params:
-| Param | Type | Required | Notes |
-| captain_id | string | Yes | Captain user id |
-
-Query Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Request Body:
-| Field | Type | Required | Notes |
-| - | - | - | - |
-
-Example Request:
+Example JSON Request:
 ```json
 {}
 ```
 
-Example Response:
-```json
-{
-  "stats": {
-    "captain_id": "65c7f7d0e9f1c3a1b2c3d4e8",
-    "average_rating": 4.8,
-    "total_ratings": 120,
-    "total_trips": 540
-  }
-}
-```
-
-Status Codes:
-200 OK
-401 Unauthorized
-404 Not Found
-
-Error Cases:
-Captain not found
-
-Notes:
-Aggregated stats for display in user/captain apps.
-
-Vehicle Rules
-Endpoint: GET /api/v1/vehicle/rules
-
-Purpose:
-Get current vehicle and EV reward rules.
-
-Method: GET
-
-Authentication: JWT (USER/CAPTAIN/RESTAURANT/ADMIN)
-
-Headers:
-Authorization: Bearer <jwt>
-
-Path Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Query Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Request Body:
-| Field | Type | Required | Notes |
-| - | - | - | - |
-
-Example Request:
-```json
-{}
-```
-
-Example Response:
+Example JSON Response:
 ```json
 {
   "rules": {
@@ -1477,3718 +830,224 @@ Example Response:
 }
 ```
 
-Status Codes:
-200 OK
-401 Unauthorized
-
-Error Cases:
-Invalid or missing JWT
-
-Notes:
-Food delivery is restricted to vehicles in food_allowed_vehicles.
-
-Jobs & Matching
-Endpoint: POST /api/v1/jobs/create/
-
-Purpose:
-Trigger matching for a job (food order or ride).
-
-Method: POST
-
-Authentication: JWT (USER/RESTAURANT)
-
-Headers:
-Content-Type: application/json
-Authorization: Bearer <jwt>
-
-Path Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Query Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Request Body:
-| Field | Type | Required | Notes |
-| job_type | string | Yes | ORDER or RIDE |
-| job_id | string | Yes | Order or ride id |
-
-Example Request:
-```json
-{
-  "job_type": "ORDER",
-  "job_id": "65c80756e9f1c3a1b2c3d4f6"
-}
-```
-
-Example Response:
-```json
-{
-  "candidates": [
-    "65c7f7d0e9f1c3a1b2c3d4e8",
-    "65c7f7d0e9f1c3a1b2c3d4e9"
-  ]
-}
-```
-
-Status Codes:
-201 Created
-400 Bad Request
-401 Unauthorized
-
-Error Cases:
-Job not found
-Invalid job_type
-
-Notes:
-Matching enforces food delivery two-wheeler-only and ride vehicle_type matching. Go-Home captains receive only route-compatible jobs.
-
-**User APIs**
-Wallet
-Endpoint: GET /api/v1/wallet/transactions/
-
-Purpose:
-List wallet transactions for the authenticated user.
-
-Method: GET
-
-Authentication: JWT (USER)
-
-Headers:
-Authorization: Bearer <jwt>
-
-Path Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Query Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Request Body:
-| Field | Type | Required | Notes |
-| - | - | - | - |
-
-Example Request:
-```json
-{}
-```
-
-Example Response:
-```json
-{
-  "transactions": [
-    {
-      "_id": "65c80848e9f1c3a1b2c3d4f7",
-      "amount": 5000,
-      "type": "DEBIT",
-      "reason": "FOOD_ORDER",
-      "source": "FOOD",
-      "balance_after": 20000,
-      "created_at": "2026-02-10T10:40:00.000Z"
-    }
-  ]
-}
-```
-
-Status Codes:
-200 OK
-401 Unauthorized
-
-Error Cases:
-Invalid or missing JWT
-
-Notes:
-Wallet is separate from reward points.
-
-Wallet
-Endpoint: POST /api/v1/wallet/refund/
-
-Purpose:
-Credit a wallet refund.
-
-Method: POST
-
-Authentication: JWT (USER)
-
-Headers:
-Content-Type: application/json
-Authorization: Bearer <jwt>
-
-Path Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Query Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Request Body:
-| Field | Type | Required | Notes |
-| reference | string | No | Order/Ride id |
-| amount | integer | Yes | Amount in paise |
-| reason | string | Yes | Refund reason |
-| source | string | Yes | FOOD, RIDE, REFUND |
-
-Example Request:
-```json
-{
-  "reference": "65c80756e9f1c3a1b2c3d4f6",
-  "amount": 5000,
-  "reason": "Order cancelled",
-  "source": "FOOD"
-}
-```
-
-Example Response:
-```json
-{
-  "transaction": {
-    "_id": "65c808f1e9f1c3a1b2c3d4f8",
-    "amount": 5000,
-    "type": "CREDIT",
-    "reason": "Order cancelled",
-    "source": "FOOD",
-    "is_refund": true,
-    "balance_after": 25000
-  }
-}
-```
-
-Status Codes:
-200 OK
-400 Bad Request
-401 Unauthorized
-
-Error Cases:
-Refund failed
-
-Notes:
-Used by cancellation flows and admin adjustments.
-
-Wallet Analytics
-Endpoint: GET /api/v1/wallet/analytics/{user_id}/
-
-Purpose:
-Get wallet analytics for a user (self or admin).
-
-Method: GET
-
-Authentication: JWT (USER/ADMIN)
-
-Headers:
-Authorization: Bearer <jwt>
-
-Path Params:
-| Param | Type | Required | Notes |
-| user_id | string | Yes | User id |
-
-Query Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Request Body:
-| Field | Type | Required | Notes |
-| - | - | - | - |
-
-Example Request:
-```json
-{}
-```
-
-Example Response:
-```json
-{
-  "analytics": {
-    "totals": {"credits": 50000, "debits": 38000, "rewards": 2000, "refunds": 1500},
-    "daily": {"2026-02-10": {"credits": 5000, "debits": 2000, "rewards": 0, "refunds": 0}},
-    "weekly": {"2026-W07": {"credits": 20000, "debits": 15000, "rewards": 500, "refunds": 300}},
-    "monthly": {"2026-02": {"credits": 50000, "debits": 38000, "rewards": 2000, "refunds": 1500}}
-  }
-}
-```
-
-Status Codes:
-200 OK
-401 Unauthorized
-403 Forbidden
-404 Not Found
-
-Error Cases:
-User not found
-Not allowed to access another user
-
-Notes:
-USER can only access their own analytics. ADMIN can access any user.
-
-Orders (Food)
-Endpoint: POST /api/v1/orders/checkout/
-
-Purpose:
-Preview food order totals, surge, rewards, and redemption.
-
-Method: POST
-
-Authentication: JWT (USER)
-
-Headers:
-Content-Type: application/json
-Authorization: Bearer <jwt>
-
-Path Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Query Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Request Body:
-| Field | Type | Required | Notes |
-| restaurant_id | string | Yes | Restaurant id |
-| items | array<object> | Yes | [{menu_item_id, quantity}] |
-| redeem_points | integer | No | Reward points to redeem |
-
-Example Request:
-```json
-{
-  "restaurant_id": "65c7f7fbe9f1c3a1b2c3d4e7",
-  "items": [{"menu_item_id": "65c7f8a7e9f1c3a1b2c3d4e6", "quantity": 2}],
-  "redeem_points": 50
-}
-```
-
-Example Response:
-```json
-{
-  "items": [
-    {"menu_item_id": "65c7f8a7e9f1c3a1b2c3d4e6", "name": "Chicken Biryani", "price": 25000, "quantity": 2, "total": 50000}
-  ],
-  "subtotal": 50000,
-  "surge_multiplier": 1.1,
-  "surge_amount": 5000,
-  "total_before_rewards": 55000,
-  "redeem_points_applied": 50,
-  "redeem_amount": 5000,
-  "reward_points_earned": 20,
-  "total": 50000
-}
-```
-
-Status Codes:
-200 OK
-400 Bad Request
-401 Unauthorized
-
-Error Cases:
-Restaurant or menu item not found
-Invalid items
-
-Notes:
-Reward points are earned only for recommended restaurants/items. Redemption uses 1 point = ?1.
-
-Orders (Food)
-Endpoint: POST /api/v1/orders/
-
-Purpose:
-Create a food order and trigger matching.
-
-Method: POST
-
-Authentication: JWT (USER)
-
-Headers:
-Content-Type: application/json
-Authorization: Bearer <jwt>
-
-Path Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Query Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Request Body:
-| Field | Type | Required | Notes |
-| restaurant_id | string | Yes | Restaurant id |
-| items | array<object> | Yes | [{menu_item_id, quantity}] |
-| payment_mode | string | Yes | RAZORPAY, COD, WALLET, WALLET_RAZORPAY |
-| wallet_amount | integer | No | Amount from wallet in paise |
-| redeem_points | integer | No | Reward points to redeem |
-
-Example Request:
-```json
-{
-  "restaurant_id": "65c7f7fbe9f1c3a1b2c3d4e7",
-  "items": [{"menu_item_id": "65c7f8a7e9f1c3a1b2c3d4e6", "quantity": 2}],
-  "payment_mode": "WALLET_RAZORPAY",
-  "wallet_amount": 10000,
-  "redeem_points": 50
-}
-```
-
-Example Response:
-```json
-{
-  "order": {
-    "_id": "65c809d9e9f1c3a1b2c3d4f9",
-    "status": "PENDING_PAYMENT",
-    "amount_total": 50000,
-    "payment_amount": 40000,
-    "reward_points_earned": 20,
-    "surge_multiplier": 1.1,
-    "captain_id": null
-  },
-  "items": [
-    {"menu_item_id": "65c7f8a7e9f1c3a1b2c3d4e6", "name": "Chicken Biryani", "price": 25000, "quantity": 2, "total": 50000}
-  ],
-  "razorpay_order": {
-    "id": "order_abc123",
-    "amount": 40000,
-    "currency": "INR",
-    "status": "created"
-  }
-}
-```
-
-Status Codes:
-201 Created
-400 Bad Request
-401 Unauthorized
-
-Error Cases:
-Invalid payment_mode
-Insufficient wallet balance
-
-Notes:
-Matching for food orders only allows BIKE_PETROL and BIKE_EV captains. Rewards are credited after successful payment.
-
-Orders (Food)
-Endpoint: POST /api/v1/orders/verify-payment/
-
-Purpose:
-Verify Razorpay payment for a food order.
-
-Method: POST
-
-Authentication: JWT (USER)
-
-Headers:
-Content-Type: application/json
-Authorization: Bearer <jwt>
-
-Path Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Query Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Request Body:
-| Field | Type | Required | Notes |
-| order_id | string | Yes | Order id |
-| razorpay_order_id | string | Yes | Razorpay order id |
-| razorpay_payment_id | string | Yes | Razorpay payment id |
-| razorpay_signature | string | Yes | Razorpay signature |
-
-Example Request:
-```json
-{
-  "order_id": "65c809d9e9f1c3a1b2c3d4f9",
-  "razorpay_order_id": "order_abc123",
-  "razorpay_payment_id": "pay_123",
-  "razorpay_signature": "sig_xyz"
-}
-```
-
-Example Response:
-```json
-{
-  "order": {
-    "_id": "65c809d9e9f1c3a1b2c3d4f9",
-    "is_paid": true,
-    "status": "PLACED"
-  }
-}
-```
-
-Status Codes:
-200 OK
-400 Bad Request
-401 Unauthorized
-
-Error Cases:
-Payment verification failed
-Order not found
-
-Notes:
-Reward points for recommended items are credited after payment verification.
-
-Rides
-Endpoint: POST /api/v1/rides/fare/
-
-Purpose:
-Get fare estimate and EV reward preview for a ride.
-
-Method: POST
-
-Authentication: JWT (USER)
-
-Headers:
-Content-Type: application/json
-Authorization: Bearer <jwt>
-
-Path Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Query Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Request Body:
-| Field | Type | Required | Notes |
-| pickup_lat | number | Yes | Latitude |
-| pickup_lng | number | Yes | Longitude |
-| dropoff_lat | number | Yes | Latitude |
-| dropoff_lng | number | Yes | Longitude |
-| vehicle_type | string | Yes | BIKE_PETROL, BIKE_EV, AUTO, CAR, SUV |
-
-Example Request:
-```json
-{
-  "pickup_lat": 12.9716,
-  "pickup_lng": 77.5946,
-  "dropoff_lat": 12.9352,
-  "dropoff_lng": 77.6245,
-  "vehicle_type": "BIKE_EV"
-}
-```
-
-Example Response:
-```json
-{
-  "fare_base": 80,
-  "surge_multiplier": 1.2,
-  "surge_amount": 16,
-  "fare_total": 96,
-  "reward_points_preview": 9
-}
-```
-
-Status Codes:
-200 OK
-400 Bad Request
-401 Unauthorized
-
-Error Cases:
-Invalid vehicle_type
-
-Notes:
-Rates per km: BIKE_PETROL/BIKE_EV=8, AUTO=12, CAR=18, SUV=25. EV rewards apply only to BIKE_EV.
-
-Rides
-Endpoint: POST /api/v1/rides/
-
-Purpose:
-Create a ride request and trigger matching.
-
-Method: POST
-
-Authentication: JWT (USER)
-
-Headers:
-Content-Type: application/json
-Authorization: Bearer <jwt>
-
-Path Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Query Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Request Body:
-| Field | Type | Required | Notes |
-| pickup_lat | number | Yes | Latitude |
-| pickup_lng | number | Yes | Longitude |
-| dropoff_lat | number | Yes | Latitude |
-| dropoff_lng | number | Yes | Longitude |
-| vehicle_type | string | Yes | BIKE_PETROL, BIKE_EV, AUTO, CAR, SUV |
-| payment_mode | string | Yes | RAZORPAY, WALLET, WALLET_RAZORPAY |
-| wallet_amount | integer | No | Wallet amount in paise |
-| redeem_points | integer | No | Reward points to redeem |
-
-Example Request:
-```json
-{
-  "pickup_lat": 12.9716,
-  "pickup_lng": 77.5946,
-  "dropoff_lat": 12.9352,
-  "dropoff_lng": 77.6245,
-  "vehicle_type": "BIKE_EV",
-  "payment_mode": "WALLET_RAZORPAY",
-  "wallet_amount": 2000,
-  "redeem_points": 20
-}
-```
-
-Example Response:
-```json
-{
-  "ride": {
-    "_id": "65c80b15e9f1c3a1b2c3d4fa",
-    "status": "PENDING_PAYMENT",
-    "vehicle_type": "BIKE_EV",
-    "is_ev": true,
-    "reward_points_earned": 9,
-    "fare": 96,
-    "payment_amount": 76
-  },
-  "razorpay_order": {
-    "id": "order_ride_123",
-    "amount": 7600,
-    "currency": "INR",
-    "status": "created"
-  }
-}
-```
-
-Status Codes:
-201 Created
-400 Bad Request
-401 Unauthorized
-
-Error Cases:
-Invalid payment_mode
-Insufficient wallet balance
-
-Notes:
-EV rewards are earned only for BIKE_EV and credited after ride completion.
-
-Rides
-Endpoint: POST /api/v1/rides/verify-payment/
-
-Purpose:
-Verify Razorpay payment for a ride.
-
-Method: POST
-
-Authentication: JWT (USER)
-
-Headers:
-Content-Type: application/json
-Authorization: Bearer <jwt>
-
-Path Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Query Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Request Body:
-| Field | Type | Required | Notes |
-| ride_id | string | Yes | Ride id |
-| razorpay_order_id | string | Yes | Razorpay order id |
-| razorpay_payment_id | string | Yes | Razorpay payment id |
-| razorpay_signature | string | Yes | Razorpay signature |
-
-Example Request:
-```json
-{
-  "ride_id": "65c80b15e9f1c3a1b2c3d4fa",
-  "razorpay_order_id": "order_ride_123",
-  "razorpay_payment_id": "pay_123",
-  "razorpay_signature": "sig_xyz"
-}
-```
-
-Example Response:
-```json
-{
-  "ride": {
-    "_id": "65c80b15e9f1c3a1b2c3d4fa",
-    "is_paid": true,
-    "status": "REQUESTED"
-  }
-}
-```
-
-Status Codes:
-200 OK
-400 Bad Request
-401 Unauthorized
-
-Error Cases:
-Payment verification failed
-Ride not found
-
-Notes:
-Ride enters matching after verification.
-
-Promotions
-Endpoint: POST /api/v1/coupon/apply
-
-Purpose:
-Apply a coupon code and calculate discount.
-
-Method: POST
-
-Authentication: JWT (USER)
-
-Headers:
-Content-Type: application/json
-Authorization: Bearer <jwt>
-
-Path Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Query Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Request Body:
-| Field | Type | Required | Notes |
-| code | string | Yes | Coupon code |
-| amount | integer | Yes | Amount in paise |
-| job_type | string | Yes | ORDER or RIDE |
-
-Example Request:
-```json
-{
-  "code": "WELCOME",
-  "amount": 25000,
-  "job_type": "ORDER"
-}
-```
-
-Example Response:
-```json
-{
-  "coupon": {
-    "code": "WELCOME",
-    "discount": 5000,
-    "amount": 25000,
-    "payable": 20000
-  }
-}
-```
-
-Status Codes:
-200 OK
-400 Bad Request
-401 Unauthorized
-
-Error Cases:
-Coupon not found or expired
-Usage limit reached
-
-Notes:
-Coupons can be restricted by job_type and min_amount.
-
-Promotions
-Endpoint: POST /api/v1/referral/use
-
-Purpose:
-Apply a referral code and credit reward points.
-
-Method: POST
-
-Authentication: JWT (USER)
-
-Headers:
-Content-Type: application/json
-Authorization: Bearer <jwt>
-
-Path Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Query Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Request Body:
-| Field | Type | Required | Notes |
-| referral_code | string | Yes | Referral code |
-
-Example Request:
-```json
-{
-  "referral_code": "GORIDES123"
-}
-```
-
-Example Response:
-```json
-{
-  "used": true
-}
-```
-
-Status Codes:
-200 OK
-400 Bad Request
-401 Unauthorized
-
-Error Cases:
-Referral already used
-Invalid referral code
-
-Notes:
-Credits reward points to both referee and referrer when configured.
-
-Ratings
-Endpoint: POST /api/v1/captain/rate/
-
-Purpose:
-Rate a captain after a ride or food order.
-
-Method: POST
-
-Authentication: JWT (USER)
-
-Headers:
-Content-Type: application/json
-Authorization: Bearer <jwt>
-
-Path Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Query Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Request Body:
-| Field | Type | Required | Notes |
-| job_type | string | Yes | ORDER or RIDE |
-| job_id | string | Yes | Order or ride id |
-| rating | integer | Yes | 1 to 5 |
-| comment | string | No | Optional comment |
-
-Example Request:
-```json
-{
-  "job_type": "RIDE",
-  "job_id": "65c80b15e9f1c3a1b2c3d4fa",
-  "rating": 5,
-  "comment": "Great ride"
-}
-```
-
-Example Response:
-```json
-{
-  "rating": {
-    "_id": "65c80c72e9f1c3a1b2c3d4fb",
-    "job_type": "RIDE",
-    "job_id": "65c80b15e9f1c3a1b2c3d4fa",
-    "rating": 5,
-    "comment": "Great ride",
-    "created_at": "2026-02-10T10:50:00.000Z"
-  }
-}
-```
-
-Status Codes:
-201 Created
-400 Bad Request
-401 Unauthorized
-
-Error Cases:
-Invalid rating
-Job not found
-
-Notes:
-Rating impacts captain average rating.
-
-Cancellation
-Endpoint: POST /api/v1/cancel/order
-
-Purpose:
-Cancel a food order with refund/penalty logic.
-
-Method: POST
-
-Authentication: JWT (USER/CAPTAIN/RESTAURANT/ADMIN)
-
-Headers:
-Content-Type: application/json
-Authorization: Bearer <jwt>
-
-Path Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Query Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Request Body:
-| Field | Type | Required | Notes |
-| order_id | string | Yes | Order id |
-| actor | string | No | USER, CAPTAIN, RESTAURANT, SYSTEM, ADMIN |
-| reason | string | Yes | Cancellation reason |
-| late_delivery | boolean | No | Apply late-delivery refund |
-| no_show | boolean | No | Apply no-show fee |
-| metadata | object | No | Additional context |
-
-Example Request:
-```json
-{
-  "order_id": "65c809d9e9f1c3a1b2c3d4f9",
-  "reason": "User cancelled",
-  "late_delivery": false,
-  "no_show": false
-}
-```
-
-Example Response:
-```json
-{
-  "result": {
-    "cancellation": {"job_type": "ORDER", "reason": "User cancelled"},
-    "refund": {"amount": 25000, "method": "WALLET"},
-    "penalty": null
-  }
-}
-```
-
-Status Codes:
-200 OK
-400 Bad Request
-401 Unauthorized
-
-Error Cases:
-Order not found
-Order already closed
-
-Notes:
-Refunds and penalties follow cancel policy. Late delivery triggers partial refund. No-show may charge user fee.
-
-Cancellation
-Endpoint: POST /api/v1/cancel/ride
-
-Purpose:
-Cancel a ride with refund/penalty logic.
-
-Method: POST
-
-Authentication: JWT (USER/CAPTAIN/ADMIN)
-
-Headers:
-Content-Type: application/json
-Authorization: Bearer <jwt>
-
-Path Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Query Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Request Body:
-| Field | Type | Required | Notes |
-| ride_id | string | Yes | Ride id |
-| actor | string | No | USER, CAPTAIN, SYSTEM, ADMIN |
-| reason | string | Yes | Cancellation reason |
-| no_show | boolean | No | Apply no-show fee |
-| metadata | object | No | Additional context |
-
-Example Request:
-```json
-{
-  "ride_id": "65c80b15e9f1c3a1b2c3d4fa",
-  "reason": "User cancelled",
-  "no_show": false
-}
-```
-
-Example Response:
-```json
-{
-  "result": {
-    "cancellation": {"job_type": "RIDE", "reason": "User cancelled"},
-    "refund": {"amount": 80, "method": "WALLET"},
-    "penalty": null
-  }
-}
-```
-
-Status Codes:
-200 OK
-400 Bad Request
-401 Unauthorized
-
-Error Cases:
-Ride not found
-Ride already closed
-
-Notes:
-Refunds and penalties follow cancel policy. No-show may charge user fee.
-
-Growth
-Endpoint: GET /api/v1/feed/personalized
-
-Purpose:
-Fetch a personalized feed for the user.
-
-Method: GET
-
-Authentication: JWT (USER)
-
-Headers:
-Authorization: Bearer <jwt>
-
-Path Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Query Params:
-| Param | Type | Required | Notes |
-| limit | integer | No | Default 50 |
-
-Request Body:
-| Field | Type | Required | Notes |
-| - | - | - | - |
-
-Example Request:
-```json
-{}
-```
-
-Example Response:
-```json
-{
-  "feed": [
-    {
-      "_id": "65c7fb2de9f1c3a1b2c3d4f0",
-      "type": "RESTAURANT",
-      "reference_id": "65c7f7fbe9f1c3a1b2c3d4e7",
-      "title": "Top Rated"
-    }
-  ]
-}
-```
-
-Status Codes:
-200 OK
-401 Unauthorized
-
-Error Cases:
-Invalid or missing JWT
-
-Notes:
-Feed is derived from recommendations and engagement history.
-
-Growth
-Endpoint: POST /api/v1/experiment/assign
-
-Purpose:
-Assign an experiment variant for a user.
-
-Method: POST
-
-Authentication: JWT (USER/ADMIN)
-
-Headers:
-Content-Type: application/json
-Authorization: Bearer <jwt>
-
-Path Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Query Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Request Body:
-| Field | Type | Required | Notes |
-| experiment_key | string | Yes | Experiment key |
-| variants | array<string> | Yes | Variant list |
-
-Example Request:
-```json
-{
-  "experiment_key": "homepage_v1",
-  "variants": ["A", "B"]
-}
-```
-
-Example Response:
-```json
-{
-  "assignment": {
-    "experiment_key": "homepage_v1",
-    "variant": "A"
-  }
-}
-```
-
-Status Codes:
-200 OK
-400 Bad Request
-401 Unauthorized
-
-Error Cases:
-No variants provided
-
-Notes:
-Assignment is deterministic per user.
-
-**Captain APIs**
-Captain Status
-Endpoint: POST /api/v1/captains/online/
-
-Purpose:
-Set captain online/offline status.
-
-Method: POST
-
-Authentication: JWT (CAPTAIN)
-
-Headers:
-Content-Type: application/json
-Authorization: Bearer <jwt>
-
-Path Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Query Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Request Body:
-| Field | Type | Required | Notes |
-| is_online | boolean | Yes | true or false |
-
-Example Request:
-```json
-{
-  "is_online": true
-}
-```
-
-Example Response:
-```json
-{
-  "captain": {
-    "user_id": "65c7f7d0e9f1c3a1b2c3d4e8",
-    "is_online": true,
-    "is_verified": true
-  }
-}
-```
-
-Status Codes:
-200 OK
-401 Unauthorized
-403 Forbidden
-
-Error Cases:
-Captain not verified
-
-Notes:
-Unverified captains cannot go online. Going offline disables Go-Home mode.
-
-Captain Status
-Endpoint: POST /api/v1/captain/online/
-
-Purpose:
-Alias endpoint for setting captain online/offline.
-
-Method: POST
-
-Authentication: JWT (CAPTAIN)
-
-Headers:
-Content-Type: application/json
-Authorization: Bearer <jwt>
-
-Path Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Query Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Request Body:
-| Field | Type | Required | Notes |
-| is_online | boolean | Yes | true or false |
-
-Example Request:
-```json
-{
-  "is_online": false
-}
-```
-
-Example Response:
-```json
-{
-  "captain": {
-    "user_id": "65c7f7d0e9f1c3a1b2c3d4e8",
-    "is_online": false
-  }
-}
-```
-
-Status Codes:
-200 OK
-401 Unauthorized
-403 Forbidden
-
-Error Cases:
-Captain not verified
-
-Notes:
-Functionally identical to `/captains/online/`.
-
-Captain Location
-Endpoint: POST /api/v1/captains/location/
-
-Purpose:
-Update captain current GPS location.
-
-Method: POST
-
-Authentication: JWT (CAPTAIN)
-
-Headers:
-Content-Type: application/json
-Authorization: Bearer <jwt>
-
-Path Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Query Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Request Body:
-| Field | Type | Required | Notes |
-| lat | number | Yes | Latitude |
-| lng | number | Yes | Longitude |
-
-Example Request:
-```json
-{
-  "lat": 12.9716,
-  "lng": 77.5946
-}
-```
-
-Example Response:
-```json
-{
-  "captain": {
-    "user_id": "65c7f7d0e9f1c3a1b2c3d4e8",
-    "location": {"type": "Point", "coordinates": [77.5946, 12.9716]}
-  }
-}
-```
-
-Status Codes:
-200 OK
-401 Unauthorized
-
-Error Cases:
-Invalid coordinates
-
-Notes:
-GPS jump detection may ignore unrealistic updates. Updates go-home ETA if enabled.
-
-Captain Location
-Endpoint: POST /api/v1/captain/location/
-
-Purpose:
-Alias endpoint for updating captain GPS location.
-
-Method: POST
-
-Authentication: JWT (CAPTAIN)
-
-Headers:
-Content-Type: application/json
-Authorization: Bearer <jwt>
-
-Path Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Query Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Request Body:
-| Field | Type | Required | Notes |
-| lat | number | Yes | Latitude |
-| lng | number | Yes | Longitude |
-
-Example Request:
-```json
-{
-  "lat": 12.9716,
-  "lng": 77.5946
-}
-```
-
-Example Response:
-```json
-{
-  "captain": {
-    "user_id": "65c7f7d0e9f1c3a1b2c3d4e8",
-    "location": {"type": "Point", "coordinates": [77.5946, 12.9716]}
-  }
-}
-```
-
-Status Codes:
-200 OK
-401 Unauthorized
-
-Error Cases:
-Invalid coordinates
-
-Notes:
-Functionally identical to `/captains/location/`.
-
-Captain Location
-Endpoint: POST /api/v1/captain/location/update
-
-Purpose:
-Alias endpoint for updating captain GPS location.
-
-Method: POST
-
-Authentication: JWT (CAPTAIN)
-
-Headers:
-Content-Type: application/json
-Authorization: Bearer <jwt>
-
-Path Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Query Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Request Body:
-| Field | Type | Required | Notes |
-| lat | number | Yes | Latitude |
-| lng | number | Yes | Longitude |
-
-Example Request:
-```json
-{
-  "lat": 12.9716,
-  "lng": 77.5946
-}
-```
-
-Example Response:
-```json
-{
-  "captain": {
-    "user_id": "65c7f7d0e9f1c3a1b2c3d4e8",
-    "location": {"type": "Point", "coordinates": [77.5946, 12.9716]}
-  }
-}
-```
-
-Status Codes:
-200 OK
-401 Unauthorized
-
-Error Cases:
-Invalid coordinates
-
-Notes:
-Functionally identical to `/captains/location/`.
-
-Captain Vehicle
-Endpoint: POST /api/v1/captain/vehicle/register/
-
-Purpose:
-Register or update captain vehicle details.
-
-Method: POST
-
-Authentication: JWT (CAPTAIN)
-
-Headers:
-Content-Type: application/json
-Authorization: Bearer <jwt>
-
-Path Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Query Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Request Body:
-| Field | Type | Required | Notes |
-| vehicle_type | string | Yes | BIKE_PETROL, BIKE_EV, AUTO, CAR, SUV |
-| vehicle_number | string | Yes | Registration number |
-| vehicle_brand | string | Yes | Brand/model |
-| license_number | string | Yes | License number |
-| rc_image | string | Yes | RC image URL |
-| license_image | string | Yes | License image URL |
-
-Example Request:
-```json
-{
-  "vehicle_type": "BIKE_EV",
-  "vehicle_number": "KA01AB1234",
-  "vehicle_brand": "Ather",
-  "license_number": "DL123456789",
-  "rc_image": "https://cdn.example.com/rc.jpg",
-  "license_image": "https://cdn.example.com/license.jpg"
-}
-```
-
-Example Response:
-```json
-{
-  "vehicle": {
-    "vehicle_type": "BIKE_EV",
-    "is_ev": true,
-    "vehicle_number": "KA01AB1234",
-    "is_verified": false
-  },
-  "captain": {
-    "user_id": "65c7f7d0e9f1c3a1b2c3d4e8",
-    "is_verified": false
-  }
-}
-```
-
-Status Codes:
-200 OK
-401 Unauthorized
-404 Not Found
-
-Error Cases:
-Captain not found
-Invalid vehicle_type
-
-Notes:
-Registering a vehicle resets verification and sets captain offline.
-
-Vehicles (Captain)
-Endpoint: POST /api/v1/vehicle/register
-
-Purpose:
-Register vehicle details in the vehicles collection and update captain profile.
-
-Method: POST
-
-Authentication: JWT (CAPTAIN)
-
-Headers:
-Content-Type: application/json
-Authorization: Bearer <jwt>
-
-Path Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Query Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Request Body:
-| Field | Type | Required | Notes |
-| vehicle_type | string | Yes | BIKE_PETROL, BIKE_EV, AUTO, CAR, SUV |
-| vehicle_number | string | Yes | Registration number |
-| vehicle_brand | string | Yes | Brand/model |
-| license_number | string | Yes | License number |
-| rc_image | string | Yes | RC image URL |
-| license_image | string | Yes | License image URL |
-
-Example Request:
-```json
-{
-  "vehicle_type": "BIKE_EV",
-  "vehicle_number": "KA01AB1234",
-  "vehicle_brand": "Ather",
-  "license_number": "DL123456789",
-  "rc_image": "https://cdn.example.com/rc.jpg",
-  "license_image": "https://cdn.example.com/license.jpg"
-}
-```
-
-Example Response:
-```json
-{
-  "vehicle": {
-    "vehicle_type": "BIKE_EV",
-    "is_ev": true,
-    "vehicle_number": "KA01AB1234",
-    "vehicle_brand": "Ather",
-    "license_number": "DL123456789",
-    "rc_image": "https://cdn.example.com/rc.jpg",
-    "license_image": "https://cdn.example.com/license.jpg",
-    "is_verified": false
-  }
-}
-```
-
-Status Codes:
-200 OK
-401 Unauthorized
-404 Not Found
-
-Error Cases:
-Captain not found
-Invalid vehicle_type
-
-Notes:
-This endpoint also maintains the vehicles collection for analytics and rules.
-
-Captain Vehicle
-Endpoint: GET /api/v1/captain/vehicle/me/
-
-Purpose:
-Get the captain's vehicle details.
-
-Method: GET
-
-Authentication: JWT (CAPTAIN)
-
-Headers:
-Authorization: Bearer <jwt>
-
-Path Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Query Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Request Body:
-| Field | Type | Required | Notes |
-| - | - | - | - |
-
-Example Request:
-```json
-{}
-```
-
-Example Response:
-```json
-{
-  "vehicle": {
-    "vehicle_type": "BIKE_EV",
-    "is_ev": true,
-    "vehicle_number": "KA01AB1234",
-    "vehicle_brand": "Ather",
-    "license_number": "DL123456789",
-    "rc_image": "https://cdn.example.com/rc.jpg",
-    "license_image": "https://cdn.example.com/license.jpg",
-    "is_verified": true
-  }
-}
-```
-
-Status Codes:
-200 OK
-401 Unauthorized
-404 Not Found
-
-Error Cases:
-Captain not found
-
-Notes:
-Vehicle verification is controlled by admin.
-
-Captain Go-Home Mode
-Endpoint: POST /api/v1/captain/go-home/enable
-
-Purpose:
-Enable go-home mode and set home location.
-
-Method: POST
-
-Authentication: JWT (CAPTAIN)
-
-Headers:
-Content-Type: application/json
-Authorization: Bearer <jwt>
-
-Path Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Query Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Request Body:
-| Field | Type | Required | Notes |
-| lat | number | Yes | Home latitude |
-| lng | number | Yes | Home longitude |
-
-Example Request:
-```json
-{
-  "lat": 17.385044,
-  "lng": 78.486671
-}
-```
-
-Example Response:
-```json
-{
-  "captain": {
-    "user_id": "65c7f7d0e9f1c3a1b2c3d4e8",
-    "go_home_mode": true,
-    "home_location": {"type": "Point", "coordinates": [78.486671, 17.385044]}
-  }
-}
-```
-
-Status Codes:
-200 OK
-401 Unauthorized
-404 Not Found
-
-Error Cases:
-Captain not found
-Invalid coordinates
-
-Notes:
-Matching will only offer jobs that lie near the route home or reduce ETA to home. WebSocket job offers include `go_home_job: true`.
-
-Captain Go-Home Mode
-Endpoint: POST /api/v1/captain/go-home/disable
-
-Purpose:
-Disable go-home mode for the captain.
-
-Method: POST
-
-Authentication: JWT (CAPTAIN)
-
-Headers:
-Authorization: Bearer <jwt>
-
-Path Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Query Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Request Body:
-| Field | Type | Required | Notes |
-| - | - | - | - |
-
-Example Request:
-```json
-{}
-```
-
-Example Response:
-```json
-{
-  "captain": {
-    "user_id": "65c7f7d0e9f1c3a1b2c3d4e8",
-    "go_home_mode": false
-  }
-}
-```
-
-Status Codes:
-200 OK
-401 Unauthorized
-404 Not Found
-
-Error Cases:
-Captain not found
-
-Notes:
-Go-home mode is also auto-disabled when captain goes offline.
-
-Captain Jobs
-Endpoint: POST /api/v1/captains/accept-job/
-
-Purpose:
-Accept a job offer for a ride or order.
-
-Method: POST
-
-Authentication: JWT (CAPTAIN)
-
-Headers:
-Content-Type: application/json
-Authorization: Bearer <jwt>
-
-Path Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Query Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Request Body:
-| Field | Type | Required | Notes |
-| job_type | string | Yes | ORDER or RIDE |
-| job_id | string | Yes | Order or ride id |
-
-Example Request:
-```json
-{
-  "job_type": "ORDER",
-  "job_id": "65c809d9e9f1c3a1b2c3d4f9"
-}
-```
-
-Example Response:
-```json
-{
-  "job": {
-    "_id": "65c809d9e9f1c3a1b2c3d4f9",
-    "status": "ASSIGNED",
-    "captain_id": "65c7f7d0e9f1c3a1b2c3d4e8"
-  }
-}
-```
-
-Status Codes:
-200 OK
-400 Bad Request
-401 Unauthorized
-
-Error Cases:
-Job not offered to this captain
-Captain unavailable
-
-Notes:
-Enforces vehicle_type matching and food two-wheeler rules.
-
-Captain Jobs
-Endpoint: POST /api/v1/captains/complete-job/
-
-Purpose:
-Complete a job (order or ride) for the current captain.
-
-Method: POST
-
-Authentication: JWT (CAPTAIN)
-
-Headers:
-Content-Type: application/json
-Authorization: Bearer <jwt>
-
-Path Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Query Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Request Body:
-| Field | Type | Required | Notes |
-| job_type | string | Yes | ORDER or RIDE |
-| job_id | string | Yes | Order or ride id |
-
-Example Request:
-```json
-{
-  "job_type": "ORDER",
-  "job_id": "65c809d9e9f1c3a1b2c3d4f9"
-}
-```
-
-Example Response:
-```json
-{
-  "job": {
-    "_id": "65c809d9e9f1c3a1b2c3d4f9",
-    "status": "DELIVERED"
-  }
-}
-```
-
-Status Codes:
-200 OK
-400 Bad Request
-401 Unauthorized
-
-Error Cases:
-Job not found
-
-Notes:
-Completing an order triggers reward credit for recommended items.
-
-Jobs (Captain)
-Endpoint: POST /api/v1/jobs/accept/
-
-Purpose:
-Accept a job offer (matching engine endpoint).
-
-Method: POST
-
-Authentication: JWT (CAPTAIN)
-
-Headers:
-Content-Type: application/json
-Authorization: Bearer <jwt>
-
-Path Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Query Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Request Body:
-| Field | Type | Required | Notes |
-| job_type | string | Yes | ORDER or RIDE |
-| job_id | string | Yes | Order or ride id |
-
-Example Request:
-```json
-{
-  "job_type": "RIDE",
-  "job_id": "65c80b15e9f1c3a1b2c3d4fa"
-}
-```
-
-Example Response:
-```json
-{
-  "job": {
-    "_id": "65c80b15e9f1c3a1b2c3d4fa",
-    "status": "ASSIGNED",
-    "captain_id": "65c7f7d0e9f1c3a1b2c3d4e8"
-  }
-}
-```
-
-Status Codes:
-200 OK
-400 Bad Request
-401 Unauthorized
-
-Error Cases:
-Job not offered to this captain
-
-Notes:
-Same core logic as `/captains/accept-job/`.
-
-Jobs (Captain)
-Endpoint: POST /api/v1/jobs/reject/
-
-Purpose:
-Reject a job offer.
-
-Method: POST
-
-Authentication: JWT (CAPTAIN)
-
-Headers:
-Content-Type: application/json
-Authorization: Bearer <jwt>
-
-Path Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Query Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Request Body:
-| Field | Type | Required | Notes |
-| job_type | string | Yes | ORDER or RIDE |
-| job_id | string | Yes | Order or ride id |
-
-Example Request:
-```json
-{
-  "job_type": "ORDER",
-  "job_id": "65c809d9e9f1c3a1b2c3d4f9"
-}
-```
-
-Example Response:
-```json
-{
-  "rejected": true
-}
-```
-
-Status Codes:
-200 OK
-400 Bad Request
-401 Unauthorized
-
-Error Cases:
-Job not offered to this captain
-
-Notes:
-Rejected captains are skipped in matching.
-
-Jobs (Captain)
-Endpoint: POST /api/v1/jobs/complete/
-
-Purpose:
-Complete a job via matching engine.
-
-Method: POST
-
-Authentication: JWT (CAPTAIN)
-
-Headers:
-Content-Type: application/json
-Authorization: Bearer <jwt>
-
-Path Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Query Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Request Body:
-| Field | Type | Required | Notes |
-| job_type | string | Yes | ORDER or RIDE |
-| job_id | string | Yes | Order or ride id |
-
-Example Request:
-```json
-{
-  "job_type": "RIDE",
-  "job_id": "65c80b15e9f1c3a1b2c3d4fa"
-}
-```
-
-Example Response:
-```json
-{
-  "job": {
-    "_id": "65c80b15e9f1c3a1b2c3d4fa",
-    "job_status": "COMPLETED"
-  }
-}
-```
-
-Status Codes:
-200 OK
-400 Bad Request
-401 Unauthorized
-
-Error Cases:
-Job not found
-
-Notes:
-Completing a ride triggers EV reward credit if eligible.
-
-Rides (Captain)
-Endpoint: POST /api/v1/rides/complete/
-
-Purpose:
-Mark a ride as completed.
-
-Method: POST
-
-Authentication: JWT (CAPTAIN)
-
-Headers:
-Content-Type: application/json
-Authorization: Bearer <jwt>
-
-Path Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Query Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Request Body:
-| Field | Type | Required | Notes |
-| ride_id | string | Yes | Ride id |
-
-Example Request:
-```json
-{
-  "ride_id": "65c80b15e9f1c3a1b2c3d4fa"
-}
-```
-
-Example Response:
-```json
-{
-  "ride": {
-    "_id": "65c80b15e9f1c3a1b2c3d4fa",
-    "status": "COMPLETED"
-  }
-}
-```
-
-Status Codes:
-200 OK
-401 Unauthorized
-404 Not Found
-
-Error Cases:
-Ride not found
-
-Notes:
-Credits EV rewards when ride is EV and paid.
-
-Captain Earnings
-Endpoint: GET /api/v1/captain/earnings
-
-Purpose:
-Get captain wallet balance and details.
-
-Method: GET
-
-Authentication: JWT (CAPTAIN)
-
-Headers:
-Authorization: Bearer <jwt>
-
-Path Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Query Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Request Body:
-| Field | Type | Required | Notes |
-| - | - | - | - |
-
-Example Request:
-```json
-{}
-```
-
-Example Response:
-```json
-{
-  "wallet": {
-    "captain_id": "65c7f7d0e9f1c3a1b2c3d4e8",
-    "balance": 32000,
-    "updated_at": "2026-02-10T10:55:00.000Z"
-  }
-}
-```
-
-Status Codes:
-200 OK
-401 Unauthorized
-
-Error Cases:
-Invalid or missing JWT
-
-Notes:
-Captain wallet is separate from user wallet.
-
-Captain Payouts
-Endpoint: POST /api/v1/captain/payout/request
-
-Purpose:
-Request a payout from captain wallet.
-
-Method: POST
-
-Authentication: JWT (CAPTAIN)
-
-Headers:
-Content-Type: application/json
-Authorization: Bearer <jwt>
-
-Path Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Query Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Request Body:
-| Field | Type | Required | Notes |
-| amount | integer | Yes | Amount in paise |
-
-Example Request:
-```json
-{
-  "amount": 5000
-}
-```
-
-Example Response:
-```json
-{
-  "payout": {
-    "captain_id": "65c7f7d0e9f1c3a1b2c3d4e8",
-    "amount": 5000,
-    "tds_amount": 50,
-    "net_amount": 4950,
-    "status": "PENDING"
-  }
-}
-```
-
-Status Codes:
-201 Created
-400 Bad Request
-401 Unauthorized
-
-Error Cases:
-Insufficient balance
-
-Notes:
-TDS is currently 1% placeholder.
-
-Captain Payouts
-Endpoint: GET /api/v1/captain/payout/history
-
-Purpose:
-List captain payout requests.
-
-Method: GET
-
-Authentication: JWT (CAPTAIN)
-
-Headers:
-Authorization: Bearer <jwt>
-
-Path Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Query Params:
-| Param | Type | Required | Notes |
-| limit | integer | No | Default 50 |
-
-Request Body:
-| Field | Type | Required | Notes |
-| - | - | - | - |
-
-Example Request:
-```json
-{}
-```
-
-Example Response:
-```json
-{
-  "payouts": [
-    {
-      "captain_id": "65c7f7d0e9f1c3a1b2c3d4e8",
-      "amount": 5000,
-      "tds_amount": 50,
-      "net_amount": 4950,
-      "status": "PENDING",
-      "requested_at": "2026-02-10T10:56:00.000Z"
-    }
-  ]
-}
-```
-
-Status Codes:
-200 OK
-401 Unauthorized
-
-Error Cases:
-Invalid or missing JWT
-
-Notes:
-Pending payouts are processed by finance ops.
-
-Captain Bank
-Endpoint: POST /api/v1/captain/bank/link
-
-Purpose:
-Link or update captain bank account.
-
-Method: POST
-
-Authentication: JWT (CAPTAIN)
-
-Headers:
-Content-Type: application/json
-Authorization: Bearer <jwt>
-
-Path Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Query Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Request Body:
-| Field | Type | Required | Notes |
-| account_number | string | Yes | Bank account number |
-| ifsc | string | Yes | IFSC code |
-| name | string | Yes | Account holder name |
-| upi | string | No | UPI id |
-
-Example Request:
-```json
-{
-  "account_number": "1234567890",
-  "ifsc": "HDFC0001234",
-  "name": "Captain",
-  "upi": "captain@upi"
-}
-```
-
-Example Response:
-```json
-{
-  "bank_account": {
-    "captain_id": "65c7f7d0e9f1c3a1b2c3d4e8",
-    "account_number": "1234567890",
-    "ifsc": "HDFC0001234",
-    "name": "Captain",
-    "upi": "captain@upi"
-  }
-}
-```
-
-Status Codes:
-200 OK
-400 Bad Request
-401 Unauthorized
-
-Error Cases:
-Invalid captain
-
-Notes:
-Bank details are required for payouts.
-
-**Restaurant APIs**
-Restaurants
-Endpoint: POST /api/v1/restaurants/
-
-Purpose:
-Create a restaurant profile.
-
-Method: POST
-
-Authentication: JWT (RESTAURANT)
-
-Headers:
-Content-Type: application/json
-Authorization: Bearer <jwt>
-
-Path Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Query Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Request Body:
-| Field | Type | Required | Notes |
-| name | string | Yes | Restaurant name |
-| address | string | No | Address |
-| phone | string | No | Contact number |
-| lat | number | No | Latitude |
-| lng | number | No | Longitude |
-
-Example Request:
-```json
-{
-  "name": "Biryani House",
-  "address": "MG Road",
-  "phone": "+919999999999",
-  "lat": 12.9716,
-  "lng": 77.5946
-}
-```
-
-Example Response:
-```json
-{
-  "restaurant": {
-    "_id": "65c7f7fbe9f1c3a1b2c3d4e7",
-    "name": "Biryani House",
-    "owner_id": "65c7f7d0e9f1c3a1b2c3d4e5",
-    "location": {"type": "Point", "coordinates": [77.5946, 12.9716]}
-  }
-}
-```
-
-Status Codes:
-201 Created
-401 Unauthorized
-
-Error Cases:
-Invalid payload
-
-Notes:
-Restaurant location is used for surge and matching.
-
-Menu Items
-Endpoint: POST /api/v1/restaurants/{restaurant_id}/menu/
-
-Purpose:
-Add a menu item for a restaurant.
-
-Method: POST
-
-Authentication: JWT (RESTAURANT)
-
-Headers:
-Content-Type: application/json
-Authorization: Bearer <jwt>
-
-Path Params:
-| Param | Type | Required | Notes |
-| restaurant_id | string | Yes | Restaurant id |
-
-Query Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Request Body:
-| Field | Type | Required | Notes |
-| name | string | Yes | Item name |
-| price | integer | Yes | Price in paise |
-| is_available | boolean | No | Default true |
-
-Example Request:
-```json
-{
-  "name": "Chicken Biryani",
-  "price": 25000,
-  "is_available": true
-}
-```
-
-Example Response:
-```json
-{
-  "menu_item": {
-    "_id": "65c7f8a7e9f1c3a1b2c3d4e6",
-    "restaurant_id": "65c7f7fbe9f1c3a1b2c3d4e7",
-    "name": "Chicken Biryani",
-    "price": 25000,
-    "is_available": true
-  }
-}
-```
-
-Status Codes:
-201 Created
-401 Unauthorized
-403 Forbidden
-404 Not Found
-
-Error Cases:
-Restaurant not found
-Not allowed to modify another restaurant
-
-Notes:
-Use restaurant item toggle to enable/disable availability later.
-
-Restaurant Ops
-Endpoint: POST /api/v1/restaurant/order/update
-
-Purpose:
-Update restaurant order status and prep time.
-
-Method: POST
-
-Authentication: JWT (RESTAURANT)
-
-Headers:
-Content-Type: application/json
-Authorization: Bearer <jwt>
-
-Path Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Query Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Request Body:
-| Field | Type | Required | Notes |
-| order_id | string | Yes | Order id |
-| status | string | Yes | PREPARING, READY, etc |
-| prep_time_min | integer | No | Estimated prep time |
-
-Example Request:
-```json
-{
-  "order_id": "65c809d9e9f1c3a1b2c3d4f9",
-  "status": "PREPARING",
-  "prep_time_min": 20
-}
-```
-
-Example Response:
-```json
-{
-  "order": {
-    "_id": "65c809d9e9f1c3a1b2c3d4f9",
-    "status": "PREPARING",
-    "prep_time_min": 20
-  }
-}
-```
-
-Status Codes:
-200 OK
-401 Unauthorized
-404 Not Found
-
-Error Cases:
-Order not found
-
-Notes:
-Updates restaurant_ops tracking collection for analytics.
-
-Restaurant Ops
-Endpoint: POST /api/v1/restaurant/item/toggle
-
-Purpose:
-Enable or disable a menu item.
-
-Method: POST
-
-Authentication: JWT (RESTAURANT)
-
-Headers:
-Content-Type: application/json
-Authorization: Bearer <jwt>
-
-Path Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Query Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Request Body:
-| Field | Type | Required | Notes |
-| menu_item_id | string | Yes | Menu item id |
-| is_available | boolean | Yes | true or false |
-
-Example Request:
-```json
-{
-  "menu_item_id": "65c7f8a7e9f1c3a1b2c3d4e6",
-  "is_available": false
-}
-```
-
-Example Response:
-```json
-{
-  "menu_item": {
-    "_id": "65c7f8a7e9f1c3a1b2c3d4e6",
-    "is_available": false
-  }
-}
-```
-
-Status Codes:
-200 OK
-401 Unauthorized
-404 Not Found
-
-Error Cases:
-Menu item not found
-
-Notes:
-Also updates inventory collection.
-
-Restaurant Ops
-Endpoint: GET /api/v1/restaurant/analytics
-
-Purpose:
-Get restaurant analytics and revenue.
-
-Method: GET
-
-Authentication: JWT (RESTAURANT)
-
-Headers:
-Authorization: Bearer <jwt>
-
-Path Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Query Params:
-| Param | Type | Required | Notes |
-| restaurant_id | string | Yes | Restaurant id |
-
-Request Body:
-| Field | Type | Required | Notes |
-| - | - | - | - |
-
-Example Request:
-```json
-{}
-```
-
-Example Response:
-```json
-{
-  "analytics": {
-    "restaurant_id": "65c7f7fbe9f1c3a1b2c3d4e7",
-    "total_orders": 120,
-    "delivered_orders": 110,
-    "revenue": 520000
-  }
-}
-```
-
-Status Codes:
-200 OK
-400 Bad Request
-401 Unauthorized
-404 Not Found
-
-Error Cases:
-restaurant_id missing
-Restaurant not found
-
-Notes:
-Revenue is based on paid orders.
-
-**Admin APIs**
-Admin Overview
-Endpoint: GET /api/v1/admin/overview/
-
-Purpose:
-Get platform KPIs for admin dashboard.
-
-Method: GET
-
-Authentication: JWT (ADMIN)
-
-Headers:
-Authorization: Bearer <jwt>
-
-Path Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Query Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Request Body:
-| Field | Type | Required | Notes |
-| - | - | - | - |
-
-Example Request:
-```json
-{}
-```
-
-Example Response:
-```json
-{
-  "overview": {
-    "total_users": 12000,
-    "active_captains": 450,
-    "revenue": 8500000,
-    "surge_impact": 320000,
-    "wallet_balances": 1200000
-  }
-}
-```
-
-Status Codes:
-200 OK
-401 Unauthorized
-
-Error Cases:
-Invalid or missing JWT
-
-Notes:
-Aggregates food and ride revenue.
-
-Admin Users
-Endpoint: GET /api/v1/admin/users/
-
-Purpose:
-List users for admin management.
-
-Method: GET
-
-Authentication: JWT (ADMIN)
-
-Headers:
-Authorization: Bearer <jwt>
-
-Path Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Query Params:
-| Param | Type | Required | Notes |
-| limit | integer | No | Default 50 |
-| skip | integer | No | Default 0 |
-
-Request Body:
-| Field | Type | Required | Notes |
-| - | - | - | - |
-
-Example Request:
-```json
-{}
-```
-
-Example Response:
-```json
-{
-  "users": [
-    {"_id": "65c7f7d0e9f1c3a1b2c3d4e5", "phone": "+919999999999", "role": "USER"}
-  ]
-}
-```
-
-Status Codes:
-200 OK
-401 Unauthorized
-
-Error Cases:
-Invalid or missing JWT
-
-Notes:
-Paginated via limit/skip.
-
-Admin Captains
-Endpoint: GET /api/v1/admin/captains/
-
-Purpose:
-List captains for admin management.
-
-Method: GET
-
-Authentication: JWT (ADMIN)
-
-Headers:
-Authorization: Bearer <jwt>
-
-Path Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Query Params:
-| Param | Type | Required | Notes |
-| limit | integer | No | Default 50 |
-| skip | integer | No | Default 0 |
-
-Request Body:
-| Field | Type | Required | Notes |
-| - | - | - | - |
-
-Example Request:
-```json
-{}
-```
-
-Example Response:
-```json
-{
-  "captains": [
-    {"user_id": "65c7f7d0e9f1c3a1b2c3d4e8", "is_verified": false, "vehicle_type": "BIKE_EV"}
-  ]
-}
-```
-
-Status Codes:
-200 OK
-401 Unauthorized
-
-Error Cases:
-Invalid or missing JWT
-
-Notes:
-Use verify endpoint to approve or reject captains.
-
-Admin Captains
-Endpoint: GET /api/v1/admin/go-home-captains/
-
-Purpose:
-List captains currently in go-home mode.
-
-Method: GET
-
-Authentication: JWT (ADMIN)
-
-Headers:
-Authorization: Bearer <jwt>
-
-Path Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Query Params:
-| Param | Type | Required | Notes |
-| limit | integer | No | Default 100 |
-
-Request Body:
-| Field | Type | Required | Notes |
-| - | - | - | - |
-
-Example Request:
-```json
-{}
-```
-
-Example Response:
-```json
-{
-  "captains": [
-    {
-      "user_id": "65c7f7d0e9f1c3a1b2c3d4e8",
-      "go_home_mode": true,
-      "go_home_eta_s": 900,
-      "go_home_distance_m": 6200
-    }
-  ]
-}
-```
-
-Status Codes:
-200 OK
-401 Unauthorized
-
-Error Cases:
-Invalid or missing JWT
-
-Notes:
-Used for admin visibility of route-based dispatch.
-
-Admin Captains
-Endpoint: POST /api/v1/admin/captain/{captain_id}/verify/
-
-Purpose:
-Approve or reject captain verification.
-
-Method: POST
-
-Authentication: JWT (ADMIN)
-
-Headers:
-Content-Type: application/json
-Authorization: Bearer <jwt>
-
-Path Params:
-| Param | Type | Required | Notes |
-| captain_id | string | Yes | Captain user id |
-
-Query Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Request Body:
-| Field | Type | Required | Notes |
-| is_verified | boolean | Yes | true or false |
-| reason | string | No | Verification reason |
-
-Example Request:
-```json
-{
-  "is_verified": true,
-  "reason": "Documents verified"
-}
-```
-
-Example Response:
-```json
-{
-  "captain": {
-    "user_id": "65c7f7d0e9f1c3a1b2c3d4e8",
-    "is_verified": true,
-    "verified_at": "2026-02-10T11:05:00.000Z"
-  }
-}
-```
-
-Status Codes:
-200 OK
-401 Unauthorized
-404 Not Found
-
-Error Cases:
-Captain not found
-
-Notes:
-Rejecting a captain sets is_online to false.
-
-Admin Recommendations
-Endpoint: GET /api/v1/admin/recommendations/
-
-Purpose:
-List admin recommendations (legacy feed).
-
-Method: GET
-
-Authentication: JWT (ADMIN)
-
-Headers:
-Authorization: Bearer <jwt>
-
-Path Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Query Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Request Body:
-| Field | Type | Required | Notes |
-| - | - | - | - |
-
-Example Request:
-```json
-{}
-```
-
-Example Response:
-```json
-{
-  "recommendations": [
-    {"_id": "65c7fb2de9f1c3a1b2c3d4f0", "type": "RESTAURANT", "title": "Top Rated"}
-  ]
-}
-```
-
-Status Codes:
-200 OK
-401 Unauthorized
-
-Error Cases:
-Invalid or missing JWT
-
-Notes:
-Legacy recommendations feed.
-
-Admin Recommendations
-Endpoint: POST /api/v1/admin/recommendations/
-
-Purpose:
-Create a legacy recommendation entry.
-
-Method: POST
-
-Authentication: JWT (ADMIN)
-
-Headers:
-Content-Type: application/json
-Authorization: Bearer <jwt>
-
-Path Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Query Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Request Body:
-| Field | Type | Required | Notes |
-| type | string | Yes | RESTAURANT or MENU_ITEM |
-| reference_id | string | Yes | Restaurant or menu item id |
-| title | string | Yes | Title |
-| description | string | Yes | Description |
-
-Example Request:
-```json
-{
-  "type": "RESTAURANT",
-  "reference_id": "65c7f7fbe9f1c3a1b2c3d4e7",
-  "title": "Top Rated",
-  "description": "Chef specials"
-}
-```
-
-Example Response:
-```json
-{
-  "recommendation": {
-    "_id": "65c80f18e9f1c3a1b2c3d4fc",
-    "type": "RESTAURANT",
-    "reference_id": "65c7f7fbe9f1c3a1b2c3d4e7",
-    "title": "Top Rated"
-  }
-}
-```
-
-Status Codes:
-201 Created
-400 Bad Request
-401 Unauthorized
-
-Error Cases:
-Invalid reference id
-
-Notes:
-These are separate from `is_recommended` flags on restaurants/menu items.
-
-Admin Recommendations
-Endpoint: DELETE /api/v1/admin/recommendations/{recommendation_id}/
-
-Purpose:
-Delete a legacy recommendation entry.
-
-Method: DELETE
-
-Authentication: JWT (ADMIN)
-
-Headers:
-Authorization: Bearer <jwt>
-
-Path Params:
-| Param | Type | Required | Notes |
-| recommendation_id | string | Yes | Recommendation id |
-
-Query Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Request Body:
-| Field | Type | Required | Notes |
-| - | - | - | - |
-
-Example Request:
-```json
-{}
-```
-
-Example Response:
-```json
-{
-  "deleted": true
-}
-```
-
-Status Codes:
-200 OK
-400 Bad Request
-401 Unauthorized
-404 Not Found
-
-Error Cases:
-Recommendation not found
-
-Notes:
-Soft delete is not used; entry is removed.
-
-Admin Recommendations
-Endpoint: POST /api/v1/admin/recommend/restaurant
-
-Purpose:
-Mark/unmark a restaurant as recommended.
-
-Method: POST
-
-Authentication: JWT (ADMIN)
-
-Headers:
-Content-Type: application/json
-Authorization: Bearer <jwt>
-
-Path Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Query Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Request Body:
-| Field | Type | Required | Notes |
-| restaurant_id | string | Yes | Restaurant id |
-| is_recommended | boolean | No | Default true |
-
-Example Request:
-```json
-{
-  "restaurant_id": "65c7f7fbe9f1c3a1b2c3d4e7",
-  "is_recommended": true
-}
-```
-
-Example Response:
-```json
-{
-  "restaurant": {
-    "_id": "65c7f7fbe9f1c3a1b2c3d4e7",
-    "is_recommended": true
-  }
-}
-```
-
-Status Codes:
-200 OK
-401 Unauthorized
-404 Not Found
-
-Error Cases:
-Restaurant not found
-
-Notes:
-Recommended restaurants earn reward points for users.
-
-Admin Recommendations
-Endpoint: POST /api/v1/admin/recommend/menu
-
-Purpose:
-Mark/unmark a menu item as recommended.
-
-Method: POST
-
-Authentication: JWT (ADMIN)
-
-Headers:
-Content-Type: application/json
-Authorization: Bearer <jwt>
-
-Path Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Query Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Request Body:
-| Field | Type | Required | Notes |
-| menu_item_id | string | Yes | Menu item id |
-| is_recommended | boolean | No | Default true |
-
-Example Request:
-```json
-{
-  "menu_item_id": "65c7f8a7e9f1c3a1b2c3d4e6",
-  "is_recommended": true
-}
-```
-
-Example Response:
-```json
-{
-  "menu_item": {
-    "_id": "65c7f8a7e9f1c3a1b2c3d4e6",
-    "is_recommended": true
-  }
-}
-```
-
-Status Codes:
-200 OK
-401 Unauthorized
-404 Not Found
-
-Error Cases:
-Menu item not found
-
-Notes:
-Recommended menu items earn reward points for users.
-
-Notifications
-Endpoint: POST /api/v1/notify/send
-
-Purpose:
-Queue an immediate push notification.
-
-Method: POST
-
-Authentication: JWT (ADMIN)
-
-Headers:
-Content-Type: application/json
-Authorization: Bearer <jwt>
-
-Path Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Query Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Request Body:
-| Field | Type | Required | Notes |
-| user_id | string | No | Target user id |
-| topic | string | No | FCM topic name |
-| title | string | Yes | Notification title |
-| body | string | No | Notification body |
-| data | object | No | Custom payload |
+Possible Errors:
+| Status | Example |
+| --- | --- |
+| 401 | {"detail": "Authentication credentials were not provided"} |
+
+### Support: Create Ticket
+Endpoint: `POST /api/v1/support/ticket`
+Purpose: Create a support ticket.
+Authentication: JWT
+Roles: USER, CAPTAIN, RESTAURANT
+Required Headers: `Authorization: Bearer <jwt>`, `Content-Type: application/json`
+
+Path Params: None.
+Query Params: None.
+
+Request Body Schema:
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| subject | string | Yes | Ticket subject |
+| message | string | Yes | Ticket message |
+| category | string | No | Category label |
 | priority | string | No | LOW, NORMAL, HIGH |
-| silent | boolean | No | Default false |
 
-Example Request:
+Example JSON Request:
 ```json
 {
-  "user_id": "65c7f7d0e9f1c3a1b2c3d4e5",
-  "title": "Order placed",
-  "body": "Your order is being prepared",
-  "data": {"order_id": "65c809d9e9f1c3a1b2c3d4f9"},
+  "subject": "Refund issue",
+  "message": "I was charged twice",
   "priority": "HIGH"
 }
 ```
 
-Example Response:
+Example JSON Response:
 ```json
 {
-  "notification": {
-    "_id": "65c8116ee9f1c3a1b2c3d4fd",
-    "status": "QUEUED",
-    "retry_count": 0
+  "ticket": {
+    "_id": "<ticket_id>",
+    "subject": "Refund issue",
+    "priority": "HIGH"
   }
 }
 ```
 
-Status Codes:
-202 Accepted
-400 Bad Request
-401 Unauthorized
-
-Error Cases:
-Invalid payload
-
-Notes:
-Notifications are queued via Redis with retry logic.
-
-Notifications
-Endpoint: POST /api/v1/notify/schedule
-
-Purpose:
-Schedule a notification for future delivery.
-
-Method: POST
-
-Authentication: JWT (ADMIN)
-
-Headers:
-Content-Type: application/json
-Authorization: Bearer <jwt>
-
-Path Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Query Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Request Body:
-| Field | Type | Required | Notes |
-| user_id | string | No | Target user id |
-| topic | string | No | FCM topic name |
-| title | string | Yes | Notification title |
-| body | string | No | Notification body |
-| data | object | No | Custom payload |
-| priority | string | No | LOW, NORMAL, HIGH |
-| silent | boolean | No | Default false |
-| send_at | string | Yes | ISO 8601 datetime |
-
-Example Request:
-```json
-{
-  "user_id": "65c7f7d0e9f1c3a1b2c3d4e5",
-  "title": "Promo",
-  "body": "Discount available",
-  "send_at": "2026-02-10T12:00:00Z"
-}
-```
-
-Example Response:
-```json
-{
-  "notification": {
-    "_id": "65c81256e9f1c3a1b2c3d4fe",
-    "status": "SCHEDULED",
-    "send_at": "2026-02-10T12:00:00Z"
-  }
-}
-```
-
-Status Codes:
-201 Created
-400 Bad Request
-401 Unauthorized
-
-Error Cases:
-Invalid send_at format
-
-Notes:
-Scheduled notifications are moved to the queue when send_at is reached.
-
-Notifications
-Endpoint: GET /api/v1/notify/history
-
-Purpose:
-List notification history.
-
-Method: GET
-
-Authentication: JWT (ADMIN)
-
-Headers:
-Authorization: Bearer <jwt>
-
-Path Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Query Params:
-| Param | Type | Required | Notes |
-| limit | integer | No | Default 50 |
-
-Request Body:
-| Field | Type | Required | Notes |
-| - | - | - | - |
-
-Example Request:
-```json
-{}
-```
-
-Example Response:
-```json
-{
-  "notifications": [
-    {"_id": "65c8116ee9f1c3a1b2c3d4fd", "status": "SENT", "title": "Order placed"}
-  ]
-}
-```
-
-Status Codes:
-200 OK
-401 Unauthorized
-
-Error Cases:
-Invalid or missing JWT
-
-Notes:
-Includes queued, scheduled, sent, and failed notifications.
-
-Fraud
-Endpoint: GET /api/v1/fraud/scan/
-
-Purpose:
-Run fraud scan and return suspicious users.
-
-Method: GET
-
-Authentication: JWT (ADMIN)
-
-Headers:
-Authorization: Bearer <jwt>
-
-Path Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Query Params:
-| Param | Type | Required | Notes |
-| limit | integer | No | Default 200 |
-
-Request Body:
-| Field | Type | Required | Notes |
-| - | - | - | - |
-
-Example Request:
-```json
-{}
-```
-
-Example Response:
-```json
-{
-  "suspicious": [
-    {
-      "user_id": "65c7f7d0e9f1c3a1b2c3d4e5",
-      "score": -0.42,
-      "features": {"wallet_credit": 200000, "ride_count": 2}
-    }
-  ]
-}
-```
-
-Status Codes:
-200 OK
-401 Unauthorized
-
-Error Cases:
-Invalid or missing JWT
-
-Notes:
-Uses anomaly detection over wallet and usage features.
-
-Trust & Safety
-Endpoint: GET /api/v1/trust/scan
-
-Purpose:
-Run trust scan for a user/device set.
-
-Method: GET
-
-Authentication: JWT (ADMIN)
-
-Headers:
-Authorization: Bearer <jwt>
-
-Path Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Query Params:
-| Param | Type | Required | Notes |
-| user_id | string | No | Filter by user id |
-
-Request Body:
-| Field | Type | Required | Notes |
-| - | - | - | - |
-
-Example Request:
-```json
-{}
-```
-
-Example Response:
-```json
-{
-  "findings": [
-    {"device_id": "device-123", "type": "DUPLICATE_DEVICE", "users": ["65c7f7d0e9f1c3a1b2c3d4e5"]}
-  ],
-  "device_count": 10
-}
-```
-
-Status Codes:
-200 OK
-401 Unauthorized
-
-Error Cases:
-Invalid or missing JWT
-
-Notes:
-Detects duplicate devices and spoofing indicators.
-
-Vehicle Rules
-Endpoint: POST /api/v1/vehicle/rules
-
-Purpose:
-Update vehicle rules (admin-configurable).
-
-Method: POST
-
-Authentication: JWT (ADMIN)
-
-Headers:
-Content-Type: application/json
-Authorization: Bearer <jwt>
-
-Path Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Query Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Request Body:
-| Field | Type | Required | Notes |
-| food_allowed_vehicles | array<string> | No | Default BIKE_PETROL, BIKE_EV |
-| ev_reward_percentage | number | No | Example 0.10 for 10% |
-| ev_bonus_multiplier | number | No | Multiplier for EV rewards |
-
-Example Request:
-```json
-{
-  "food_allowed_vehicles": ["BIKE_PETROL", "BIKE_EV"],
-  "ev_reward_percentage": 0.1,
-  "ev_bonus_multiplier": 1.2
-}
-```
-
-Example Response:
-```json
-{
-  "rules": {
-    "food_allowed_vehicles": ["BIKE_PETROL", "BIKE_EV"],
-    "ev_reward_percentage": 0.1,
-    "ev_bonus_multiplier": 1.2
-  }
-}
-```
-
-Status Codes:
-200 OK
-401 Unauthorized
-403 Forbidden
-
-Error Cases:
-Not allowed (non-admin)
-
-Notes:
-Rules are applied by matching and rewards engines.
-
-**WebSocket APIs**
-WebSocket
-Endpoint: WS /ws/captain/{captain_id}/
-
-Purpose:
-Real-time job offers and status updates for captains.
-
-Method: WS
-
-Authentication: None (secured at gateway; JWT not enforced in WS layer)
-
-Headers:
-None
-
-Path Params:
-| Param | Type | Required | Notes |
-| captain_id | string | Yes | Captain user id |
-
-Query Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Request Body:
-| Field | Type | Required | Notes |
-| - | - | - | - |
-
-Example Request:
-```json
-{"type": "ping"}
-```
-
-Example Response:
-```json
-{"type": "pong"}
-```
-
-Status Codes:
-101 Switching Protocols
-
-Error Cases:
-Invalid room id
-
-Notes:
-Events: `job_offer`, `job_assigned`, `job_status`. Job offers include `go_home_job` when applicable.
-
-WebSocket
-Endpoint: WS /ws/user/{user_id}/
-
-Purpose:
-Real-time updates for users (job assigned, status, location).
-
-Method: WS
-
-Authentication: None (secured at gateway; JWT not enforced in WS layer)
-
-Headers:
-None
-
-Path Params:
-| Param | Type | Required | Notes |
-| user_id | string | Yes | User id |
-
-Query Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Request Body:
-| Field | Type | Required | Notes |
-| - | - | - | - |
-
-Example Request:
-```json
-{"type": "ping"}
-```
-
-Example Response:
-```json
-{"type": "pong"}
-```
-
-Status Codes:
-101 Switching Protocols
-
-Error Cases:
-Invalid room id
-
-Notes:
-Events: `job_assigned`, `job_status`, `location_update`.
-
-WebSocket
-Endpoint: WS /ws/order/{order_id}/
-
-Purpose:
-Order tracking updates (captain location).
-
-Method: WS
-
-Authentication: None (secured at gateway; JWT not enforced in WS layer)
-
-Headers:
-None
-
-Path Params:
-| Param | Type | Required | Notes |
-| order_id | string | Yes | Order id |
-
-Query Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Request Body:
-| Field | Type | Required | Notes |
-| - | - | - | - |
-
-Example Request:
-```json
-{"type": "ping"}
-```
-
-Example Response:
-```json
-{"type": "pong"}
-```
-
-Status Codes:
-101 Switching Protocols
-
-Error Cases:
-Invalid room id
-
-Notes:
-Event: `location_update` with captain coordinates.
-
-WebSocket
-Endpoint: WS /ws/chat/{room_id}/
-
-Purpose:
-Real-time chat between users, captains, and restaurants.
-
-Method: WS
-
-Authentication: None (secured at gateway; JWT not enforced in WS layer)
-
-Headers:
-None
-
-Path Params:
-| Param | Type | Required | Notes |
-| room_id | string | Yes | Chat room id |
-
-Query Params:
-| Param | Type | Required | Notes |
-| - | - | - | - |
-
-Request Body:
-| Field | Type | Required | Notes |
-| - | - | - | - |
-
-Example Request:
-```json
-{
-  "type": "message",
-  "sender_id": "65c7f7d0e9f1c3a1b2c3d4e5",
-  "sender_role": "USER",
-  "receiver_id": "65c7f7d0e9f1c3a1b2c3d4e8",
-  "receiver_role": "CAPTAIN",
-  "message": "On my way",
-  "client_message_id": "msg_123"
-}
-```
-
-Example Response:
-```json
-{
-  "type": "ack",
-  "message_id": "65c80544e9f1c3a1b2c3d4f4"
-}
-```
-
-Status Codes:
-101 Switching Protocols
-
-Error Cases:
-Invalid message payload
-
-Notes:
-Supports `message`, `delivered`, and `ping` types. Messages are broadcast to the room.
-
-
-**Session Security APIs**
-Auth
-Endpoint: POST /api/v1/auth/refresh
-
-Purpose:
-Rotate refresh token and issue a new access token.
-
-Method: POST
-
-Authentication: None
-
-Headers:
-Content-Type: application/json
-
-Request Body:
-| Field | Type | Required | Notes |
-| refresh_token | string | Yes | Refresh JWT |
-
-Example Request:
-```json
-{
-  "refresh_token": "<refresh_jwt>"
-}
-```
-
-Example Response:
-```json
-{
-  "token": "<jwt>",
-  "refresh_token": "<new_refresh_jwt>"
-}
-```
-
-Error Example:
-```json
-{
-  "detail": "Refresh token revoked"
-}
-```
-
-Auth
-Endpoint: POST /api/v1/auth/logout
-
-Purpose:
-Logout and revoke tokens for the current session.
-
-Method: POST
-
+Possible Errors:
+| Status | Example |
+| --- | --- |
+| 400 | {"subject": ["This field is required."]} |
+| 401 | {"detail": "Authentication credentials were not provided"} |
+| 403 | {"detail": "Role not allowed"} |
+
+## Profile Management
+
+### Users: Update Profile
+Endpoint: `PATCH /api/v1/users/me/`
+Purpose: Update editable fields on the USER profile.
 Authentication: JWT
+Roles: USER
+Required Headers: `Authorization: Bearer <jwt>`, `Content-Type: application/json`
 
-Headers:
-Content-Type: application/json
-Authorization: Bearer <jwt>
+Path Params: None.
+Query Params: None.
 
-Request Body:
-| Field | Type | Required | Notes |
-| refresh_token | string | No | Refresh JWT |
+Request Body Schema:
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| name | string | No | Display name |
+| email | string | No | Email address |
+| avatar_url | string | No | Avatar URL |
+| default_address | object | No | Free-form address object |
+| preferences | object | No | Free-form preferences |
 
-Example Request:
+Example JSON Request:
 ```json
 {
-  "refresh_token": "<refresh_jwt>"
+  "name": "Asha Rao",
+  "email": "asha@example.com",
+  "avatar_url": "https://cdn.example.com/u/asha.png",
+  "preferences": {"language": "en"}
 }
 ```
 
-Example Response:
+Example JSON Response:
 ```json
 {
-  "success": true
+  "success": true,
+  "message": "Profile updated successfully",
+  "data": {
+    "_id": "<user_id>",
+    "name": "Asha Rao",
+    "email": "asha@example.com"
+  }
 }
 ```
 
-Error Example:
-```json
-{
-  "detail": "Invalid token"
-}
-```
+Possible Errors:
+| Status | Example |
+| --- | --- |
+| 400 | {"detail": "No valid fields to update"} |
+| 403 | {"detail": "Only USER can update this profile"} |
+| 404 | {"detail": "User not found"} |
 
-Users
-Endpoint: GET /api/v1/users/sessions
-
-Purpose:
-List active sessions for the authenticated user.
-
-Method: GET
-
+### Captains: Update Profile
+Endpoint: `PATCH /api/v1/captain/me/`
+Purpose: Update editable fields on the CAPTAIN profile.
 Authentication: JWT
+Roles: CAPTAIN
+Required Headers: `Authorization: Bearer <jwt>`, `Content-Type: application/json`
 
-Headers:
-Authorization: Bearer <jwt>
+Path Params: None.
+Query Params: None.
 
-Example Request:
-```json
-{}
-```
+Request Body Schema:
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| name | string | No | Display name |
+| avatar_url | string | No | Avatar URL |
+| vehicle_number | string | No | Vehicle number |
+| vehicle_type | string | No | Vehicle type |
+| home_location | object | No | `{lat, lng}` |
+| bio | string | No | Short bio |
 
-Example Response:
+Example JSON Request:
 ```json
 {
-  "sessions": [
-    {
-      "device_id": "device-123",
-      "device_name": "Pixel 7",
-      "ip_address": "203.0.113.1",
-      "last_seen": "2026-02-10T12:10:00Z"
-    }
-  ]
+  "name": "Ravi Kumar",
+  "vehicle_number": "KA01AB1234",
+  "vehicle_type": "BIKE",
+  "home_location": {"lat": 12.9716, "lng": 77.5946}
 }
 ```
 
-Error Example:
+Example JSON Response:
 ```json
 {
-  "detail": "Invalid token"
+  "success": true,
+  "message": "Profile updated successfully",
+  "data": {
+    "user_id": "<user_id>",
+    "name": "Ravi Kumar",
+    "vehicle_type": "BIKE"
+  }
 }
 ```
 
-**Address Book APIs**
-Users
-Endpoint: POST /api/v1/users/address
+Possible Errors:
+| Status | Example |
+| --- | --- |
+| 400 | {"detail": "No valid fields to update"} |
+| 403 | {"detail": "Role not allowed"} |
+| 404 | {"detail": "Captain not found"} |
 
-Purpose:
-Create a saved address for the user.
+### Restaurants: Update Profile
+Endpoint: `PATCH /api/v1/restaurant/me/`
+Purpose: Update editable fields on the RESTAURANT profile.
+Authentication: JWT
+Roles: RESTAURANT
+Required Headers: `Authorization: Bearer <jwt>`, `Content-Type: application/json`
 
-Method: POST
+Path Params: None.
+Query Params: None.
 
-Authentication: JWT (USER)
+Request Body Schema:
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| name | string | No | Restaurant name |
+| logo_url | string | No | Logo URL |
+| address | string | No | Address |
+| opening_time | string | No | Example `09:00` |
+| closing_time | string | No | Example `23:00` |
+| is_open | boolean | No | Open/closed flag |
+| support_phone | string | No | Support phone (requires verification) |
 
-Headers:
-Content-Type: application/json
-Authorization: Bearer <jwt>
+Example JSON Request:
+```json
+{
+  "name": "Biryani House",
+  "address": "MG Road",
+  "opening_time": "09:00",
+  "closing_time": "23:00",
+  "is_open": true
+}
+```
 
-Request Body:
-| Field | Type | Required | Notes |
+Example JSON Response:
+```json
+{
+  "success": true,
+  "message": "Profile updated successfully",
+  "data": {
+    "_id": "<restaurant_id>",
+    "name": "Biryani House",
+    "is_open": true
+  }
+}
+```
+
+Possible Errors:
+| Status | Example |
+| --- | --- |
+| 400 | {"detail": "No valid fields to update"} |
+| 403 | {"detail": "support_phone can be updated only after verification"} |
+| 404 | {"detail": "Restaurant not found"} |
+
+## User APIs
+
+### Addresses: Create
+Endpoint: `POST /api/v1/users/address`
+Purpose: Create a saved address for the authenticated user.
+Authentication: JWT
+Roles: USER
+Required Headers: `Authorization: Bearer <jwt>`, `Content-Type: application/json`
+
+Path Params: None.
+Query Params: None.
+
+Request Body Schema:
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
 | label | string | Yes | HOME, WORK, OTHER |
 | line1 | string | Yes | Address line 1 |
 | line2 | string | No | Address line 2 |
@@ -5196,11 +1055,11 @@ Request Body:
 | state | string | No | State |
 | postal_code | string | No | Postal code |
 | landmark | string | No | Landmark |
-| lat | number | No | Latitude |
-| lng | number | No | Longitude |
-| is_default | boolean | No | Default address |
+| lat | number | No | Latitude (requires `lng`) |
+| lng | number | No | Longitude (requires `lat`) |
+| is_default | boolean | No | Default address flag |
 
-Example Request:
+Example JSON Request:
 ```json
 {
   "label": "HOME",
@@ -5212,11 +1071,11 @@ Example Request:
 }
 ```
 
-Example Response:
+Example JSON Response:
 ```json
 {
   "address": {
-    "_id": "65c8f1a2e9f1c3a1b2c3d4aa",
+    "_id": "<address_id>",
     "label": "HOME",
     "line1": "MG Road",
     "city": "Bengaluru",
@@ -5225,62 +1084,77 @@ Example Response:
 }
 ```
 
-Error Example:
-```json
-{
-  "detail": "Invalid latitude"
-}
-```
+Possible Errors:
+| Status | Example |
+| --- | --- |
+| 400 | {"detail": "lat and lng must be provided together"} |
+| 401 | {"detail": "Authentication credentials were not provided"} |
+| 403 | {"detail": "Role not allowed"} |
 
-Users
-Endpoint: GET /api/v1/users/address
+### Addresses: List
+Endpoint: `GET /api/v1/users/address`
+Purpose: List saved addresses for the authenticated user.
+Authentication: JWT
+Roles: USER
+Required Headers: `Authorization: Bearer <jwt>`
 
-Purpose:
-List saved addresses for the user.
+Path Params: None.
+Query Params: None.
+Request Body Schema: None.
 
-Method: GET
-
-Authentication: JWT (USER)
-
-Headers:
-Authorization: Bearer <jwt>
-
-Example Request:
+Example JSON Request:
 ```json
 {}
 ```
 
-Example Response:
+Example JSON Response:
 ```json
 {
   "addresses": [
-    {"label": "HOME", "line1": "MG Road"}
+    {
+      "_id": "<address_id>",
+      "label": "HOME",
+      "line1": "MG Road"
+    }
   ]
 }
 ```
 
-Error Example:
-```json
-{
-  "detail": "Invalid token"
-}
-```
+Possible Errors:
+| Status | Example |
+| --- | --- |
+| 401 | {"detail": "Authentication credentials were not provided"} |
+| 403 | {"detail": "Role not allowed"} |
 
-Users
-Endpoint: PATCH /api/v1/users/address/{id}
+### Addresses: Update
+Endpoint: `PATCH /api/v1/users/address/<address_id>`
+Purpose: Update a saved address.
+Authentication: JWT
+Roles: USER
+Required Headers: `Authorization: Bearer <jwt>`, `Content-Type: application/json`
 
-Purpose:
-Update a saved address.
+Path Params:
+| Name | Type | Description |
+| --- | --- | --- |
+| address_id | string | Address identifier |
 
-Method: PATCH
+Query Params: None.
 
-Authentication: JWT (USER)
+Request Body Schema:
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| label | string | No | HOME, WORK, OTHER |
+| line1 | string | No | Address line 1 |
+| line2 | string | No | Address line 2 |
+| city | string | No | City |
+| state | string | No | State |
+| postal_code | string | No | Postal code |
+| landmark | string | No | Landmark |
+| lat | number | No | Latitude (requires `lng`) |
+| lng | number | No | Longitude (requires `lat`) |
+| is_default | boolean | No | Default address flag |
 
-Headers:
-Content-Type: application/json
-Authorization: Bearer <jwt>
-
-Example Request:
+Example JSON Request:
 ```json
 {
   "label": "WORK",
@@ -5288,180 +1162,2151 @@ Example Request:
 }
 ```
 
-Example Response:
+Example JSON Response:
 ```json
 {
   "address": {
+    "_id": "<address_id>",
     "label": "WORK",
     "is_default": false
   }
 }
 ```
 
-Error Example:
-```json
-{
-  "detail": "Address not found"
-}
-```
+Possible Errors:
+| Status | Example |
+| --- | --- |
+| 400 | {"detail": "lat and lng must be provided together"} |
+| 401 | {"detail": "Authentication credentials were not provided"} |
+| 403 | {"detail": "Role not allowed"} |
+| 404 | {"detail": "Address not found"} |
 
-Users
-Endpoint: DELETE /api/v1/users/address/{id}
+### Addresses: Delete
+Endpoint: `DELETE /api/v1/users/address/<address_id>`
+Purpose: Delete a saved address.
+Authentication: JWT
+Roles: USER
+Required Headers: `Authorization: Bearer <jwt>`
 
-Purpose:
-Delete a saved address.
+Path Params:
+| Name | Type | Description |
+| --- | --- | --- |
+| address_id | string | Address identifier |
 
-Method: DELETE
+Query Params: None.
+Request Body Schema: None.
 
-Authentication: JWT (USER)
-
-Headers:
-Authorization: Bearer <jwt>
-
-Example Request:
+Example JSON Request:
 ```json
 {}
 ```
 
-Example Response:
+Example JSON Response:
 ```json
 {
   "deleted": true
 }
 ```
 
-Error Example:
+Possible Errors:
+| Status | Example |
+| --- | --- |
+| 401 | {"detail": "Authentication credentials were not provided"} |
+| 403 | {"detail": "Role not allowed"} |
+| 404 | {"detail": "Address not found"} |
+
+### Favorites: Create
+Endpoint: `POST /api/v1/favorites`
+Purpose: Add a restaurant or menu item to favorites.
+Authentication: JWT
+Roles: USER
+Required Headers: `Authorization: Bearer <jwt>`, `Content-Type: application/json`
+
+Path Params: None.
+Query Params: None.
+
+Request Body Schema:
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| favorite_type | string | Yes | RESTAURANT or MENU_ITEM |
+| reference_id | string | Yes | ID of the target entity |
+
+Example JSON Request:
 ```json
 {
-  "detail": "Address not found"
+  "favorite_type": "RESTAURANT",
+  "reference_id": "<restaurant_id>"
 }
 ```
 
-**Notification Reliability APIs**
-Notifications
-Endpoint: POST /api/v1/notify/retry/{id}
+Example JSON Response:
+```json
+{
+  "favorite": {
+    "_id": "<favorite_id>",
+    "favorite_type": "RESTAURANT",
+    "reference_id": "<restaurant_id>"
+  }
+}
+```
 
-Purpose:
-Retry a failed or queued notification.
+Possible Errors:
+| Status | Example |
+| --- | --- |
+| 400 | {"favorite_type": ["This field is required."]} |
+| 401 | {"detail": "Authentication credentials were not provided"} |
+| 403 | {"detail": "Role not allowed"} |
 
-Method: POST
+### Orders: Checkout
+Endpoint: `POST /api/v1/orders/checkout/`
+Purpose: Calculate order totals, surge, and reward effects before placing an order.
+Authentication: JWT
+Roles: USER
+Required Headers: `Authorization: Bearer <jwt>`, `Content-Type: application/json`
 
-Authentication: JWT (ADMIN)
+Path Params: None.
+Query Params: None.
 
-Headers:
-Authorization: Bearer <jwt>
+Request Body Schema:
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| restaurant_id | string | Yes | Restaurant id |
+| items | array<object> | Yes | Array of `{menu_item_id, quantity}` |
+| redeem_points | integer | No | Reward points to redeem |
 
-Example Request:
+Example JSON Request:
+```json
+{
+  "restaurant_id": "<restaurant_id>",
+  "items": [
+    {"menu_item_id": "<menu_item_id>", "quantity": 2}
+  ],
+  "redeem_points": 50
+}
+```
+
+Example JSON Response:
+```json
+{
+  "items": [
+    {"menu_item_id": "<menu_item_id>", "name": "Biryani", "price": 25000, "quantity": 2, "total": 50000}
+  ],
+  "subtotal": 50000,
+  "surge_multiplier": 1.0,
+  "surge_amount": 0,
+  "total_before_rewards": 50000,
+  "redeem_points_applied": 50,
+  "redeem_amount": 5000,
+  "reward_points_earned": 10,
+  "total": 45000
+}
+```
+
+Possible Errors:
+| Status | Example |
+| --- | --- |
+| 400 | {"detail": "Invalid restaurant id"} |
+| 400 | {"detail": "Some menu items are unavailable"} |
+| 401 | {"detail": "Authentication credentials were not provided"} |
+| 403 | {"detail": "Role not allowed"} |
+
+### Orders: Create
+Endpoint: `POST /api/v1/orders/`
+Purpose: Create a food order and optionally create a Razorpay order for payment.
+Authentication: JWT
+Roles: USER
+Required Headers: `Authorization: Bearer <jwt>`, `Content-Type: application/json`
+
+Path Params: None.
+Query Params: None.
+
+Request Body Schema:
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| restaurant_id | string | Yes | Restaurant id |
+| items | array<object> | Yes | Array of `{menu_item_id, quantity}` |
+| payment_mode | string | Yes | RAZORPAY, COD, WALLET, WALLET_RAZORPAY |
+| wallet_amount | integer | No | Wallet amount to use |
+| redeem_points | integer | No | Reward points to redeem |
+
+Example JSON Request:
+```json
+{
+  "restaurant_id": "<restaurant_id>",
+  "items": [
+    {"menu_item_id": "<menu_item_id>", "quantity": 2}
+  ],
+  "payment_mode": "WALLET_RAZORPAY",
+  "wallet_amount": 5000,
+  "redeem_points": 50
+}
+```
+
+Example JSON Response:
+```json
+{
+  "order": {
+    "_id": "<order_id>",
+    "status": "PENDING_PAYMENT",
+    "amount_total": 45000,
+    "payment_mode": "WALLET_RAZORPAY"
+  },
+  "items": [
+    {"menu_item_id": "<menu_item_id>", "name": "Biryani", "price": 25000, "quantity": 2, "total": 50000}
+  ],
+  "razorpay_order": {
+    "id": "order_abc123",
+    "amount": 40000,
+    "currency": "INR"
+  }
+}
+```
+
+Possible Errors:
+| Status | Example |
+| --- | --- |
+| 400 | {"detail": "Invalid payment mode"} |
+| 400 | {"detail": "Insufficient wallet balance"} |
+| 401 | {"detail": "Authentication credentials were not provided"} |
+| 403 | {"detail": "Role not allowed"} |
+
+### Orders: Verify Payment
+Endpoint: `POST /api/v1/orders/verify-payment/`
+Purpose: Verify Razorpay payment and mark the order as paid.
+Authentication: JWT
+Roles: USER
+Required Headers: `Authorization: Bearer <jwt>`, `Content-Type: application/json`
+
+Path Params: None.
+Query Params: None.
+
+Request Body Schema:
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| order_id | string | Yes | Order id |
+| razorpay_order_id | string | Yes | Razorpay order id |
+| razorpay_payment_id | string | Yes | Razorpay payment id |
+| razorpay_signature | string | Yes | Razorpay signature |
+
+Example JSON Request:
+```json
+{
+  "order_id": "<order_id>",
+  "razorpay_order_id": "order_abc123",
+  "razorpay_payment_id": "pay_123",
+  "razorpay_signature": "sig_xyz"
+}
+```
+
+Example JSON Response:
+```json
+{
+  "order": {
+    "_id": "<order_id>",
+    "is_paid": true,
+    "status": "PLACED"
+  }
+}
+```
+
+Possible Errors:
+| Status | Example |
+| --- | --- |
+| 400 | {"detail": "Invalid order id"} |
+| 400 | {"detail": "Order not found"} |
+| 401 | {"detail": "Authentication credentials were not provided"} |
+
+### Orders: Reorder
+Endpoint: `POST /api/v1/orders/reorder/<order_id>`
+Purpose: Create a new order based on a previous order.
+Authentication: JWT
+Roles: USER
+Required Headers: `Authorization: Bearer <jwt>`, `Content-Type: application/json`
+
+Path Params:
+| Name | Type | Description |
+| --- | --- | --- |
+| order_id | string | Previous order id |
+
+Query Params: None.
+
+Request Body Schema:
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| payment_mode | string | Yes | RAZORPAY, COD, WALLET, WALLET_RAZORPAY |
+| wallet_amount | integer | No | Wallet amount to use |
+| redeem_points | integer | No | Reward points to redeem |
+
+Example JSON Request:
+```json
+{
+  "payment_mode": "WALLET_RAZORPAY",
+  "wallet_amount": 2000,
+  "redeem_points": 20
+}
+```
+
+Example JSON Response:
+```json
+{
+  "order": {
+    "_id": "<order_id>",
+    "status": "PENDING_PAYMENT"
+  },
+  "items": [
+    {"menu_item_id": "<menu_item_id>", "quantity": 2}
+  ],
+  "razorpay_order": {
+    "id": "order_abc123",
+    "amount": 30000,
+    "currency": "INR"
+  }
+}
+```
+
+Possible Errors:
+| Status | Example |
+| --- | --- |
+| 400 | {"detail": "Order not found"} |
+| 400 | {"detail": "Order items not found"} |
+| 401 | {"detail": "Authentication credentials were not provided"} |
+
+### Rides: Fare Estimate
+Endpoint: `POST /api/v1/rides/fare/`
+Purpose: Calculate fare estimate for a ride.
+Authentication: JWT
+Roles: USER
+Required Headers: `Authorization: Bearer <jwt>`, `Content-Type: application/json`
+
+Path Params: None.
+Query Params: None.
+
+Request Body Schema:
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| pickup_lat | number | Yes | Pickup latitude |
+| pickup_lng | number | Yes | Pickup longitude |
+| dropoff_lat | number | Yes | Dropoff latitude |
+| dropoff_lng | number | Yes | Dropoff longitude |
+| vehicle_type | string | Yes | Vehicle type |
+
+Example JSON Request:
+```json
+{
+  "pickup_lat": 12.9716,
+  "pickup_lng": 77.5946,
+  "dropoff_lat": 12.9352,
+  "dropoff_lng": 77.6245,
+  "vehicle_type": "BIKE"
+}
+```
+
+Example JSON Response:
+```json
+{
+  "fare_base": 120,
+  "surge_multiplier": 1.0,
+  "surge_amount": 0,
+  "fare_total": 120,
+  "reward_points_preview": 0
+}
+```
+
+Possible Errors:
+| Status | Example |
+| --- | --- |
+| 400 | {"detail": "Invalid vehicle_type. Allowed: BIKE_PETROL, BIKE_EV, AUTO, CAR, SUV"} |
+| 401 | {"detail": "Authentication credentials were not provided"} |
+
+### Rides: Create
+Endpoint: `POST /api/v1/rides/`
+Purpose: Create a ride and optionally create a Razorpay order for payment.
+Authentication: JWT
+Roles: USER
+Required Headers: `Authorization: Bearer <jwt>`, `Content-Type: application/json`
+
+Path Params: None.
+Query Params: None.
+
+Request Body Schema:
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| pickup_lat | number | Yes | Pickup latitude |
+| pickup_lng | number | Yes | Pickup longitude |
+| dropoff_lat | number | Yes | Dropoff latitude |
+| dropoff_lng | number | Yes | Dropoff longitude |
+| vehicle_type | string | Yes | Vehicle type |
+| payment_mode | string | Yes | RAZORPAY, WALLET, WALLET_RAZORPAY |
+| wallet_amount | integer | No | Wallet amount to use |
+| redeem_points | integer | No | Reward points to redeem |
+
+Example JSON Request:
+```json
+{
+  "pickup_lat": 12.9716,
+  "pickup_lng": 77.5946,
+  "dropoff_lat": 12.9352,
+  "dropoff_lng": 77.6245,
+  "vehicle_type": "BIKE",
+  "payment_mode": "WALLET_RAZORPAY",
+  "wallet_amount": 2000,
+  "redeem_points": 150
+}
+```
+
+Example JSON Response:
+```json
+{
+  "ride": {
+    "_id": "<ride_id>",
+    "status": "PENDING_PAYMENT",
+    "fare": 180,
+    "payment_mode": "WALLET_RAZORPAY"
+  },
+  "razorpay_order": {
+    "id": "order_abc123",
+    "amount": 160,
+    "currency": "INR"
+  }
+}
+```
+
+Possible Errors:
+| Status | Example |
+| --- | --- |
+| 400 | {"detail": "Invalid payment mode"} |
+| 400 | {"detail": "Insufficient wallet balance"} |
+| 401 | {"detail": "Authentication credentials were not provided"} |
+
+### Rides: Schedule
+Endpoint: `POST /api/v1/rides/schedule`
+Purpose: Schedule a ride for a future time.
+Authentication: JWT
+Roles: USER
+Required Headers: `Authorization: Bearer <jwt>`, `Content-Type: application/json`
+
+Path Params: None.
+Query Params: None.
+
+Request Body Schema:
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| pickup_lat | number | Yes | Pickup latitude |
+| pickup_lng | number | Yes | Pickup longitude |
+| dropoff_lat | number | Yes | Dropoff latitude |
+| dropoff_lng | number | Yes | Dropoff longitude |
+| vehicle_type | string | Yes | Vehicle type |
+| scheduled_for | string | Yes | ISO 8601 datetime |
+| payment_mode | string | No | RAZORPAY, WALLET, WALLET_RAZORPAY |
+| wallet_amount | integer | No | Wallet amount to use |
+| redeem_points | integer | No | Reward points to redeem |
+
+Example JSON Request:
+```json
+{
+  "pickup_lat": 12.9716,
+  "pickup_lng": 77.5946,
+  "dropoff_lat": 12.9352,
+  "dropoff_lng": 77.6245,
+  "vehicle_type": "BIKE",
+  "scheduled_for": "2026-02-11T09:00:00Z"
+}
+```
+
+Example JSON Response:
+```json
+{
+  "ride": {
+    "_id": "<ride_id>",
+    "status": "SCHEDULED",
+    "scheduled_for": "2026-02-11T09:00:00Z"
+  }
+}
+```
+
+Possible Errors:
+| Status | Example |
+| --- | --- |
+| 400 | {"scheduled_for": ["This field is required."]} |
+| 401 | {"detail": "Authentication credentials were not provided"} |
+
+### Rides: Verify Payment
+Endpoint: `POST /api/v1/rides/verify-payment/`
+Purpose: Verify Razorpay payment and mark the ride as paid.
+Authentication: JWT
+Roles: USER
+Required Headers: `Authorization: Bearer <jwt>`, `Content-Type: application/json`
+
+Path Params: None.
+Query Params: None.
+
+Request Body Schema:
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| ride_id | string | Yes | Ride id |
+| razorpay_order_id | string | Yes | Razorpay order id |
+| razorpay_payment_id | string | Yes | Razorpay payment id |
+| razorpay_signature | string | Yes | Razorpay signature |
+
+Example JSON Request:
+```json
+{
+  "ride_id": "<ride_id>",
+  "razorpay_order_id": "order_abc123",
+  "razorpay_payment_id": "pay_123",
+  "razorpay_signature": "sig_xyz"
+}
+```
+
+Example JSON Response:
+```json
+{
+  "ride": {
+    "_id": "<ride_id>",
+    "is_paid": true,
+    "status": "REQUESTED"
+  }
+}
+```
+
+Possible Errors:
+| Status | Example |
+| --- | --- |
+| 400 | {"detail": "Invalid ride id"} |
+| 400 | {"detail": "Ride not found"} |
+| 401 | {"detail": "Authentication credentials were not provided"} |
+
+### Ratings: Rate Captain
+Endpoint: `POST /api/v1/captain/rate/`
+Purpose: Submit a rating and optional comment for a captain on a job.
+Authentication: JWT
+Roles: USER
+Required Headers: `Authorization: Bearer <jwt>`, `Content-Type: application/json`
+
+Path Params: None.
+Query Params: None.
+
+Request Body Schema:
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| job_type | string | Yes | ORDER or RIDE |
+| job_id | string | Yes | Order or ride id |
+| rating | integer | Yes | 1 to 5 |
+| comment | string | No | Optional comment |
+
+Example JSON Request:
+```json
+{
+  "job_type": "RIDE",
+  "job_id": "<ride_id>",
+  "rating": 5,
+  "comment": "Great ride"
+}
+```
+
+Example JSON Response:
+```json
+{
+  "rating": {
+    "_id": "<rating_id>",
+    "rating": 5,
+    "comment": "Great ride"
+  }
+}
+```
+
+Possible Errors:
+| Status | Example |
+| --- | --- |
+| 400 | {"detail": "Job not found"} |
+| 400 | {"detail": "Rating already submitted for this job"} |
+| 401 | {"detail": "Authentication credentials were not provided"} |
+
+### Promotions: Apply Coupon
+Endpoint: `POST /api/v1/coupon/apply`
+Purpose: Validate and apply a coupon for a given amount.
+Authentication: JWT
+Roles: USER
+Required Headers: `Authorization: Bearer <jwt>`, `Content-Type: application/json`
+
+Path Params: None.
+Query Params: None.
+
+Request Body Schema:
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| code | string | Yes | Coupon code |
+| amount | integer | Yes | Order amount |
+| job_type | string | Yes | ORDER or RIDE |
+
+Example JSON Request:
+```json
+{
+  "code": "WELCOME",
+  "amount": 25000,
+  "job_type": "ORDER"
+}
+```
+
+Example JSON Response:
+```json
+{
+  "coupon": {
+    "code": "WELCOME",
+    "discount": 5000,
+    "amount": 25000,
+    "payable": 20000
+  }
+}
+```
+
+Possible Errors:
+| Status | Example |
+| --- | --- |
+| 400 | {"detail": "Coupon not found"} |
+| 400 | {"detail": "Coupon expired"} |
+| 401 | {"detail": "Authentication credentials were not provided"} |
+
+### Promotions: Use Referral
+Endpoint: `POST /api/v1/referral/use`
+Purpose: Redeem a referral code.
+Authentication: JWT
+Roles: USER
+Required Headers: `Authorization: Bearer <jwt>`, `Content-Type: application/json`
+
+Path Params: None.
+Query Params: None.
+
+Request Body Schema:
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| referral_code | string | Yes | Referral code |
+
+Example JSON Request:
+```json
+{
+  "referral_code": "GORIDES123"
+}
+```
+
+Example JSON Response:
+```json
+{
+  "used": true
+}
+```
+
+Possible Errors:
+| Status | Example |
+| --- | --- |
+| 400 | {"detail": "Invalid referral code"} |
+| 400 | {"detail": "Referral already used"} |
+| 401 | {"detail": "Authentication credentials were not provided"} |
+
+### Growth: Personalized Feed
+Endpoint: `GET /api/v1/feed/personalized`
+Purpose: Return a personalized feed for the authenticated user.
+Authentication: JWT
+Roles: USER
+Required Headers: `Authorization: Bearer <jwt>`
+
+Path Params: None.
+
+Query Params:
+| Name | Type | Description |
+| --- | --- | --- |
+| limit | integer | Optional. Default 50. |
+
+Request Body Schema: None.
+
+Example JSON Request:
 ```json
 {}
 ```
 
-Example Response:
+Example JSON Response:
+```json
+{
+  "feed": [
+    {
+      "_id": "<recommendation_id>",
+      "type": "RESTAURANT",
+      "title": "Top Rated"
+    }
+  ]
+}
+```
+
+Possible Errors:
+| Status | Example |
+| --- | --- |
+| 401 | {"detail": "Authentication credentials were not provided"} |
+| 403 | {"detail": "Role not allowed"} |
+
+### Growth: Experiment Assign
+Endpoint: `POST /api/v1/experiment/assign`
+Purpose: Deterministically assign a user to an experiment variant.
+Authentication: JWT
+Roles: USER, ADMIN
+Required Headers: `Authorization: Bearer <jwt>`, `Content-Type: application/json`
+
+Path Params: None.
+Query Params: None.
+
+Request Body Schema:
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| experiment_key | string | Yes | Experiment key |
+| variants | array<string> | Yes | List of variants |
+
+Example JSON Request:
+```json
+{
+  "experiment_key": "homepage_v1",
+  "variants": ["A", "B"]
+}
+```
+
+Example JSON Response:
+```json
+{
+  "assignment": {
+    "experiment_key": "homepage_v1",
+    "variant": "A"
+  }
+}
+```
+
+Possible Errors:
+| Status | Example |
+| --- | --- |
+| 400 | {"detail": "No variants provided"} |
+| 401 | {"detail": "Authentication credentials were not provided"} |
+| 403 | {"detail": "Role not allowed"} |
+
+## Captain APIs
+
+### Captain: Set Online Status
+Endpoint: `POST /api/v1/captain/online/`
+Purpose: Set the captain's online/offline status.
+Authentication: JWT
+Roles: CAPTAIN
+Required Headers: `Authorization: Bearer <jwt>`, `Content-Type: application/json`
+Aliases: `/api/v1/captains/online/`
+
+Path Params: None.
+Query Params: None.
+
+Request Body Schema:
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| is_online | boolean | Yes | Online status |
+
+Example JSON Request:
+```json
+{
+  "is_online": true
+}
+```
+
+Example JSON Response:
+```json
+{
+  "captain": {
+    "user_id": "<user_id>",
+    "is_online": true
+  }
+}
+```
+
+Possible Errors:
+| Status | Example |
+| --- | --- |
+| 403 | {"detail": "Role not allowed"} |
+| 401 | {"detail": "Authentication credentials were not provided"} |
+
+### Captain: Update Location
+Endpoint: `POST /api/v1/captain/location/`
+Purpose: Update the captain's current location.
+Authentication: JWT
+Roles: CAPTAIN
+Required Headers: `Authorization: Bearer <jwt>`, `Content-Type: application/json`
+Aliases: `/api/v1/captains/location/`, `/api/v1/captain/location/update`
+
+Path Params: None.
+Query Params: None.
+
+Request Body Schema:
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| lat | number | Yes | Latitude |
+| lng | number | Yes | Longitude |
+
+Example JSON Request:
+```json
+{
+  "lat": 12.9716,
+  "lng": 77.5946
+}
+```
+
+Example JSON Response:
+```json
+{
+  "captain": {
+    "user_id": "<user_id>",
+    "location": {"type": "Point", "coordinates": [77.5946, 12.9716]}
+  }
+}
+```
+
+Possible Errors:
+| Status | Example |
+| --- | --- |
+| 403 | {"detail": "Role not allowed"} |
+| 401 | {"detail": "Authentication credentials were not provided"} |
+
+### Captain: Register Vehicle (Captain Profile)
+Endpoint: `POST /api/v1/captain/vehicle/register/`
+Purpose: Register a vehicle for the captain and update captain profile.
+Authentication: JWT
+Roles: CAPTAIN
+Required Headers: `Authorization: Bearer <jwt>`, `Content-Type: application/json`
+
+Path Params: None.
+Query Params: None.
+
+Request Body Schema:
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| vehicle_type | string | Yes | Vehicle type |
+| vehicle_number | string | Yes | Vehicle number |
+| vehicle_brand | string | Yes | Vehicle brand |
+| license_number | string | Yes | License number |
+| rc_image | string | Yes | RC image URL |
+| license_image | string | Yes | License image URL |
+
+Example JSON Request:
+```json
+{
+  "vehicle_type": "BIKE",
+  "vehicle_number": "KA01AB1234",
+  "vehicle_brand": "Honda",
+  "license_number": "DL123456",
+  "rc_image": "https://cdn.example.com/rc.jpg",
+  "license_image": "https://cdn.example.com/license.jpg"
+}
+```
+
+Example JSON Response:
+```json
+{
+  "vehicle": {
+    "_id": "<vehicle_id>",
+    "vehicle_type": "BIKE_PETROL",
+    "vehicle_number": "KA01AB1234"
+  },
+  "captain": {
+    "user_id": "<user_id>",
+    "vehicle_number": "KA01AB1234"
+  }
+}
+```
+
+Possible Errors:
+| Status | Example |
+| --- | --- |
+| 400 | {"detail": "Invalid vehicle_type. Allowed: BIKE_PETROL, BIKE_EV, AUTO, CAR, SUV"} |
+| 404 | {"detail": "Captain not found"} |
+
+### Captain: Register Vehicle (Vehicles Service)
+Endpoint: `POST /api/v1/vehicle/register`
+Purpose: Register a vehicle for the captain (vehicles service endpoint).
+Authentication: JWT
+Roles: CAPTAIN
+Required Headers: `Authorization: Bearer <jwt>`, `Content-Type: application/json`
+
+Path Params: None.
+Query Params: None.
+
+Request Body Schema:
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| vehicle_type | string | Yes | Vehicle type |
+| vehicle_number | string | Yes | Vehicle number |
+| vehicle_brand | string | Yes | Vehicle brand |
+| license_number | string | Yes | License number |
+| rc_image | string | Yes | RC image URL |
+| license_image | string | Yes | License image URL |
+
+Example JSON Request:
+```json
+{
+  "vehicle_type": "BIKE_EV",
+  "vehicle_number": "KA01AB1234",
+  "vehicle_brand": "Ather",
+  "license_number": "DL123",
+  "rc_image": "https://cdn.example.com/rc.jpg",
+  "license_image": "https://cdn.example.com/license.jpg"
+}
+```
+
+Example JSON Response:
+```json
+{
+  "vehicle": {
+    "_id": "<vehicle_id>",
+    "vehicle_type": "BIKE_EV",
+    "vehicle_number": "KA01AB1234"
+  }
+}
+```
+
+Possible Errors:
+| Status | Example |
+| --- | --- |
+| 404 | {"detail": "Captain not found"} |
+| 403 | {"detail": "Role not allowed"} |
+
+### Captain: Get Vehicle
+Endpoint: `GET /api/v1/captain/vehicle/me/`
+Purpose: Fetch the captain's registered vehicle.
+Authentication: JWT
+Roles: CAPTAIN
+Required Headers: `Authorization: Bearer <jwt>`
+
+Path Params: None.
+Query Params: None.
+Request Body Schema: None.
+
+Example JSON Request:
+```json
+{}
+```
+
+Example JSON Response:
+```json
+{
+  "vehicle": {
+    "_id": "<vehicle_id>",
+    "vehicle_type": "BIKE",
+    "vehicle_number": "KA01AB1234"
+  }
+}
+```
+
+Possible Errors:
+| Status | Example |
+| --- | --- |
+| 404 | {"detail": "Captain not found"} |
+| 403 | {"detail": "Role not allowed"} |
+
+### Captain: Enable Go-Home Mode
+Endpoint: `POST /api/v1/captain/go-home/enable`
+Purpose: Enable go-home mode with a destination location.
+Authentication: JWT
+Roles: CAPTAIN
+Required Headers: `Authorization: Bearer <jwt>`, `Content-Type: application/json`
+
+Path Params: None.
+Query Params: None.
+
+Request Body Schema:
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| lat | number | Yes | Latitude |
+| lng | number | Yes | Longitude |
+
+Example JSON Request:
+```json
+{
+  "lat": 17.385044,
+  "lng": 78.486671
+}
+```
+
+Example JSON Response:
+```json
+{
+  "captain": {
+    "user_id": "<user_id>",
+    "go_home": true
+  }
+}
+```
+
+Possible Errors:
+| Status | Example |
+| --- | --- |
+| 404 | {"detail": "Captain not found"} |
+| 403 | {"detail": "Role not allowed"} |
+
+### Captain: Disable Go-Home Mode
+Endpoint: `POST /api/v1/captain/go-home/disable`
+Purpose: Disable go-home mode.
+Authentication: JWT
+Roles: CAPTAIN
+Required Headers: `Authorization: Bearer <jwt>`
+
+Path Params: None.
+Query Params: None.
+Request Body Schema: None.
+
+Example JSON Request:
+```json
+{}
+```
+
+Example JSON Response:
+```json
+{
+  "captain": {
+    "user_id": "<user_id>",
+    "go_home": false
+  }
+}
+```
+
+Possible Errors:
+| Status | Example |
+| --- | --- |
+| 404 | {"detail": "Captain not found"} |
+| 403 | {"detail": "Role not allowed"} |
+
+### Captain: Earnings
+Endpoint: `GET /api/v1/captain/earnings`
+Purpose: Fetch the captain's wallet/earnings summary.
+Authentication: JWT
+Roles: CAPTAIN
+Required Headers: `Authorization: Bearer <jwt>`
+
+Path Params: None.
+Query Params: None.
+Request Body Schema: None.
+
+Example JSON Request:
+```json
+{}
+```
+
+Example JSON Response:
+```json
+{
+  "wallet": {
+    "captain_id": "<captain_id>",
+    "balance": 12000,
+    "updated_at": "2026-02-11T00:00:00Z"
+  }
+}
+```
+
+Possible Errors:
+| Status | Example |
+| --- | --- |
+| 403 | {"detail": "Role not allowed"} |
+| 401 | {"detail": "Authentication credentials were not provided"} |
+
+### Captain: Request Payout
+Endpoint: `POST /api/v1/captain/payout/request`
+Purpose: Request a payout to the linked bank account.
+Authentication: JWT
+Roles: CAPTAIN
+Required Headers: `Authorization: Bearer <jwt>`, `Content-Type: application/json`
+
+Path Params: None.
+Query Params: None.
+
+Request Body Schema:
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| amount | integer | Yes | Payout amount |
+
+Example JSON Request:
+```json
+{
+  "amount": 5000
+}
+```
+
+Example JSON Response:
+```json
+{
+  "payout": {
+    "_id": "<payout_id>",
+    "amount": 5000,
+    "tds_amount": 50,
+    "net_amount": 4950,
+    "status": "PENDING"
+  }
+}
+```
+
+Possible Errors:
+| Status | Example |
+| --- | --- |
+| 400 | {"detail": "Insufficient balance"} |
+| 403 | {"detail": "Role not allowed"} |
+
+### Captain: Payout History
+Endpoint: `GET /api/v1/captain/payout/history`
+Purpose: List payout history for the captain.
+Authentication: JWT
+Roles: CAPTAIN
+Required Headers: `Authorization: Bearer <jwt>`
+
+Path Params: None.
+
+Query Params:
+| Name | Type | Description |
+| --- | --- | --- |
+| limit | integer | Optional. Default 50. |
+
+Request Body Schema: None.
+
+Example JSON Request:
+```json
+{}
+```
+
+Example JSON Response:
+```json
+{
+  "payouts": [
+    {
+      "_id": "<payout_id>",
+      "amount": 5000,
+      "status": "PAID"
+    }
+  ]
+}
+```
+
+Possible Errors:
+| Status | Example |
+| --- | --- |
+| 403 | {"detail": "Role not allowed"} |
+
+### Captain: Link Bank Account
+Endpoint: `POST /api/v1/captain/bank/link`
+Purpose: Link a bank account for payouts.
+Authentication: JWT
+Roles: CAPTAIN
+Required Headers: `Authorization: Bearer <jwt>`, `Content-Type: application/json`
+
+Path Params: None.
+Query Params: None.
+
+Request Body Schema:
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| account_number | string | Yes | Bank account number |
+| ifsc | string | Yes | IFSC code |
+| name | string | Yes | Account holder name |
+| upi | string | No | UPI id |
+
+Example JSON Request:
+```json
+{
+  "account_number": "1234567890",
+  "ifsc": "HDFC0001234",
+  "name": "Captain",
+  "upi": "captain@upi"
+}
+```
+
+Example JSON Response:
+```json
+{
+  "bank_account": {
+    "_id": "<bank_id>",
+    "ifsc": "HDFC0001234",
+    "account_number": "1234567890"
+  }
+}
+```
+
+Possible Errors:
+| Status | Example |
+| --- | --- |
+| 400 | {"detail": "Invalid captain"} |
+| 403 | {"detail": "Role not allowed"} |
+
+### Captain: Complete Ride
+Endpoint: `POST /api/v1/rides/complete/`
+Purpose: Mark a ride as completed.
+Authentication: JWT
+Roles: CAPTAIN
+Required Headers: `Authorization: Bearer <jwt>`, `Content-Type: application/json`
+
+Path Params: None.
+Query Params: None.
+
+Request Body Schema:
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| ride_id | string | Yes | Ride id |
+
+Example JSON Request:
+```json
+{
+  "ride_id": "<ride_id>"
+}
+```
+
+Example JSON Response:
+```json
+{
+  "ride": {
+    "_id": "<ride_id>",
+    "status": "COMPLETED"
+  }
+}
+```
+
+Possible Errors:
+| Status | Example |
+| --- | --- |
+| 404 | {"detail": "Ride not found"} |
+| 403 | {"detail": "Role not allowed"} |
+
+### Captain: Stats
+Endpoint: `GET /api/v1/captain/<captain_id>/stats/`
+Purpose: Retrieve aggregate stats for a captain.
+Authentication: JWT
+Roles: Any authenticated
+Required Headers: `Authorization: Bearer <jwt>`
+
+Path Params:
+| Name | Type | Description |
+| --- | --- | --- |
+| captain_id | string | Captain identifier |
+
+Query Params: None.
+Request Body Schema: None.
+
+Example JSON Request:
+```json
+{}
+```
+
+Example JSON Response:
+```json
+{
+  "stats": {
+    "captain_id": "<captain_id>",
+    "average_rating": 4.8,
+    "total_ratings": 120,
+    "total_trips": 300,
+    "cancellation_rate": 0.02
+  }
+}
+```
+
+Possible Errors:
+| Status | Example |
+| --- | --- |
+| 404 | {"detail": "Captain not found"} |
+| 401 | {"detail": "Authentication credentials were not provided"} |
+
+## Restaurant APIs
+
+### Restaurants: Create
+Endpoint: `POST /api/v1/restaurants/`
+Purpose: Create a restaurant profile for the authenticated owner.
+Authentication: JWT
+Roles: RESTAURANT
+Required Headers: `Authorization: Bearer <jwt>`, `Content-Type: application/json`
+
+Path Params: None.
+Query Params: None.
+
+Request Body Schema:
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| name | string | Yes | Restaurant name |
+| address | string | No | Address |
+| phone | string | No | Phone number |
+| lat | number | No | Latitude |
+| lng | number | No | Longitude |
+
+Example JSON Request:
+```json
+{
+  "name": "Biryani House",
+  "address": "MG Road",
+  "phone": "+919999999999",
+  "lat": 12.97,
+  "lng": 77.59
+}
+```
+
+Example JSON Response:
+```json
+{
+  "restaurant": {
+    "_id": "<restaurant_id>",
+    "name": "Biryani House",
+    "address": "MG Road"
+  }
+}
+```
+
+Possible Errors:
+| Status | Example |
+| --- | --- |
+| 403 | {"detail": "Role not allowed"} |
+| 401 | {"detail": "Authentication credentials were not provided"} |
+
+### Restaurants: Add Menu Item
+Endpoint: `POST /api/v1/restaurants/<restaurant_id>/menu/`
+Purpose: Add a menu item to a restaurant.
+Authentication: JWT
+Roles: RESTAURANT
+Required Headers: `Authorization: Bearer <jwt>`, `Content-Type: application/json`
+
+Path Params:
+| Name | Type | Description |
+| --- | --- | --- |
+| restaurant_id | string | Restaurant identifier |
+
+Query Params: None.
+
+Request Body Schema:
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| name | string | Yes | Menu item name |
+| price | integer | Yes | Price in smallest currency unit |
+| is_available | boolean | No | Default true |
+
+Example JSON Request:
+```json
+{
+  "name": "Chicken Biryani",
+  "price": 25000,
+  "is_available": true
+}
+```
+
+Example JSON Response:
+```json
+{
+  "menu_item": {
+    "_id": "<menu_item_id>",
+    "name": "Chicken Biryani",
+    "price": 25000,
+    "is_available": true
+  }
+}
+```
+
+Possible Errors:
+| Status | Example |
+| --- | --- |
+| 403 | {"detail": "Not allowed"} |
+| 404 | {"detail": "Restaurant not found"} |
+
+### Restaurant Ops: Update Order Status
+Endpoint: `POST /api/v1/restaurant/order/update`
+Purpose: Update the status of a restaurant order.
+Authentication: JWT
+Roles: RESTAURANT
+Required Headers: `Authorization: Bearer <jwt>`, `Content-Type: application/json`
+
+Path Params: None.
+Query Params: None.
+
+Request Body Schema:
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| order_id | string | Yes | Order id |
+| status | string | Yes | New status |
+| prep_time_min | integer | No | Prep time in minutes |
+
+Example JSON Request:
+```json
+{
+  "order_id": "<order_id>",
+  "status": "PREPARING",
+  "prep_time_min": 20
+}
+```
+
+Example JSON Response:
+```json
+{
+  "order": {
+    "_id": "<order_id>",
+    "status": "PREPARING"
+  }
+}
+```
+
+Possible Errors:
+| Status | Example |
+| --- | --- |
+| 404 | {"detail": "Order not found"} |
+| 403 | {"detail": "Role not allowed"} |
+
+### Restaurant Ops: Toggle Menu Item
+Endpoint: `POST /api/v1/restaurant/item/toggle`
+Purpose: Toggle menu item availability.
+Authentication: JWT
+Roles: RESTAURANT
+Required Headers: `Authorization: Bearer <jwt>`, `Content-Type: application/json`
+
+Path Params: None.
+Query Params: None.
+
+Request Body Schema:
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| menu_item_id | string | Yes | Menu item id |
+| is_available | boolean | Yes | Availability flag |
+
+Example JSON Request:
+```json
+{
+  "menu_item_id": "<menu_item_id>",
+  "is_available": false
+}
+```
+
+Example JSON Response:
+```json
+{
+  "menu_item": {
+    "_id": "<menu_item_id>",
+    "is_available": false
+  }
+}
+```
+
+Possible Errors:
+| Status | Example |
+| --- | --- |
+| 404 | {"detail": "Menu item not found"} |
+| 403 | {"detail": "Role not allowed"} |
+
+### Restaurant Ops: Analytics
+Endpoint: `GET /api/v1/restaurant/analytics`
+Purpose: Retrieve analytics for a restaurant.
+Authentication: JWT
+Roles: RESTAURANT
+Required Headers: `Authorization: Bearer <jwt>`
+
+Path Params: None.
+
+Query Params:
+| Name | Type | Description |
+| --- | --- | --- |
+| restaurant_id | string | Required. Restaurant identifier. |
+
+Request Body Schema: None.
+
+Example JSON Request:
+```json
+{}
+```
+
+Example JSON Response:
+```json
+{
+  "analytics": {
+    "orders": 120,
+    "revenue": 450000
+  }
+}
+```
+
+Possible Errors:
+| Status | Example |
+| --- | --- |
+| 400 | {"detail": "restaurant_id is required"} |
+| 404 | {"detail": "Restaurant not found"} |
+| 403 | {"detail": "Role not allowed"} |
+
+## Admin APIs
+
+### Admin: Overview
+Endpoint: `GET /api/v1/admin/overview/`
+Purpose: Fetch high-level admin metrics and overview data.
+Authentication: JWT
+Roles: ADMIN
+Required Headers: `Authorization: Bearer <jwt>`
+
+Path Params: None.
+Query Params: None.
+Request Body Schema: None.
+
+Example JSON Request:
+```json
+{}
+```
+
+Example JSON Response:
+```json
+{
+  "overview": {
+    "users": 1200,
+    "orders": 3400
+  }
+}
+```
+
+Possible Errors:
+| Status | Example |
+| --- | --- |
+| 403 | {"detail": "Role not allowed"} |
+
+### Admin: List Users
+Endpoint: `GET /api/v1/admin/users/`
+Purpose: List users for admin review.
+Authentication: JWT
+Roles: ADMIN
+Required Headers: `Authorization: Bearer <jwt>`
+
+Path Params: None.
+
+Query Params:
+| Name | Type | Description |
+| --- | --- | --- |
+| limit | integer | Optional. Default 50. |
+| skip | integer | Optional. Default 0. |
+
+Request Body Schema: None.
+
+Example JSON Request:
+```json
+{}
+```
+
+Example JSON Response:
+```json
+{
+  "users": [
+    {"_id": "<user_id>", "phone": "+919999999999", "role": "USER"}
+  ]
+}
+```
+
+Possible Errors:
+| Status | Example |
+| --- | --- |
+| 403 | {"detail": "Role not allowed"} |
+
+### Admin: List Captains
+Endpoint: `GET /api/v1/admin/captains/`
+Purpose: List captains for admin review.
+Authentication: JWT
+Roles: ADMIN
+Required Headers: `Authorization: Bearer <jwt>`
+
+Path Params: None.
+
+Query Params:
+| Name | Type | Description |
+| --- | --- | --- |
+| limit | integer | Optional. Default 50. |
+| skip | integer | Optional. Default 0. |
+
+Request Body Schema: None.
+
+Example JSON Request:
+```json
+{}
+```
+
+Example JSON Response:
+```json
+{
+  "captains": [
+    {"_id": "<captain_id>", "user_id": "<user_id>", "is_verified": false}
+  ]
+}
+```
+
+Possible Errors:
+| Status | Example |
+| --- | --- |
+| 403 | {"detail": "Role not allowed"} |
+
+### Admin: Go-Home Captains
+Endpoint: `GET /api/v1/admin/go-home-captains/`
+Purpose: List captains currently in go-home mode.
+Authentication: JWT
+Roles: ADMIN
+Required Headers: `Authorization: Bearer <jwt>`
+
+Path Params: None.
+
+Query Params:
+| Name | Type | Description |
+| --- | --- | --- |
+| limit | integer | Optional. Default 100. |
+
+Request Body Schema: None.
+
+Example JSON Request:
+```json
+{}
+```
+
+Example JSON Response:
+```json
+{
+  "captains": [
+    {"_id": "<captain_id>", "go_home": true}
+  ]
+}
+```
+
+Possible Errors:
+| Status | Example |
+| --- | --- |
+| 403 | {"detail": "Role not allowed"} |
+
+### Admin: Verify Captain
+Endpoint: `POST /api/v1/admin/captain/<captain_id>/verify/`
+Purpose: Verify or unverify a captain.
+Authentication: JWT
+Roles: ADMIN
+Required Headers: `Authorization: Bearer <jwt>`, `Content-Type: application/json`
+
+Path Params:
+| Name | Type | Description |
+| --- | --- | --- |
+| captain_id | string | Captain identifier |
+
+Query Params: None.
+
+Request Body Schema:
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| is_verified | boolean | Yes | Verification status |
+| reason | string | No | Optional reason |
+
+Example JSON Request:
+```json
+{
+  "is_verified": true,
+  "reason": "Documents verified"
+}
+```
+
+Example JSON Response:
+```json
+{
+  "captain": {
+    "_id": "<captain_id>",
+    "is_verified": true
+  }
+}
+```
+
+Possible Errors:
+| Status | Example |
+| --- | --- |
+| 404 | {"detail": "Captain not found"} |
+| 403 | {"detail": "Role not allowed"} |
+
+### Admin: Recommend Restaurant
+Endpoint: `POST /api/v1/admin/recommend/restaurant`
+Purpose: Mark or unmark a restaurant as recommended.
+Authentication: JWT
+Roles: ADMIN
+Required Headers: `Authorization: Bearer <jwt>`, `Content-Type: application/json`
+
+Path Params: None.
+Query Params: None.
+
+Request Body Schema:
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| restaurant_id | string | Yes | Restaurant id |
+| is_recommended | boolean | No | Default true |
+
+Example JSON Request:
+```json
+{
+  "restaurant_id": "<restaurant_id>",
+  "is_recommended": true
+}
+```
+
+Example JSON Response:
+```json
+{
+  "restaurant": {
+    "_id": "<restaurant_id>",
+    "is_recommended": true
+  }
+}
+```
+
+Possible Errors:
+| Status | Example |
+| --- | --- |
+| 404 | {"detail": "Restaurant not found"} |
+| 403 | {"detail": "Role not allowed"} |
+
+### Admin: Recommend Menu Item
+Endpoint: `POST /api/v1/admin/recommend/menu`
+Purpose: Mark or unmark a menu item as recommended.
+Authentication: JWT
+Roles: ADMIN
+Required Headers: `Authorization: Bearer <jwt>`, `Content-Type: application/json`
+
+Path Params: None.
+Query Params: None.
+
+Request Body Schema:
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| menu_item_id | string | Yes | Menu item id |
+| is_recommended | boolean | No | Default true |
+
+Example JSON Request:
+```json
+{
+  "menu_item_id": "<menu_item_id>",
+  "is_recommended": true
+}
+```
+
+Example JSON Response:
+```json
+{
+  "menu_item": {
+    "_id": "<menu_item_id>",
+    "is_recommended": true
+  }
+}
+```
+
+Possible Errors:
+| Status | Example |
+| --- | --- |
+| 404 | {"detail": "Menu item not found"} |
+| 403 | {"detail": "Role not allowed"} |
+
+### Admin: Recommendations List
+Endpoint: `GET /api/v1/admin/recommendations/`
+Purpose: List legacy recommendations.
+Authentication: JWT
+Roles: ADMIN
+Required Headers: `Authorization: Bearer <jwt>`
+
+Path Params: None.
+Query Params: None.
+Request Body Schema: None.
+
+Example JSON Request:
+```json
+{}
+```
+
+Example JSON Response:
+```json
+{
+  "recommendations": [
+    {"_id": "<recommendation_id>", "type": "RESTAURANT", "title": "Top Rated"}
+  ]
+}
+```
+
+Possible Errors:
+| Status | Example |
+| --- | --- |
+| 403 | {"detail": "Role not allowed"} |
+
+### Admin: Create Recommendation
+Endpoint: `POST /api/v1/admin/recommendations/`
+Purpose: Create a legacy recommendation entry.
+Authentication: JWT
+Roles: ADMIN
+Required Headers: `Authorization: Bearer <jwt>`, `Content-Type: application/json`
+
+Path Params: None.
+Query Params: None.
+
+Request Body Schema:
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| type | string | Yes | RESTAURANT or MENU_ITEM |
+| reference_id | string | Yes | Target entity id |
+| title | string | Yes | Recommendation title |
+| description | string | Yes | Description |
+
+Example JSON Request:
+```json
+{
+  "type": "RESTAURANT",
+  "reference_id": "<restaurant_id>",
+  "title": "Top Rated",
+  "description": "Chef specials"
+}
+```
+
+Example JSON Response:
+```json
+{
+  "recommendation": {
+    "_id": "<recommendation_id>",
+    "type": "RESTAURANT",
+    "reference_id": "<restaurant_id>"
+  }
+}
+```
+
+Possible Errors:
+| Status | Example |
+| --- | --- |
+| 400 | {"detail": "Invalid reference id"} |
+| 403 | {"detail": "Role not allowed"} |
+
+### Admin: Delete Recommendation
+Endpoint: `DELETE /api/v1/admin/recommendations/<recommendation_id>/`
+Purpose: Delete a legacy recommendation entry.
+Authentication: JWT
+Roles: ADMIN
+Required Headers: `Authorization: Bearer <jwt>`
+
+Path Params:
+| Name | Type | Description |
+| --- | --- | --- |
+| recommendation_id | string | Recommendation id |
+
+Query Params: None.
+Request Body Schema: None.
+
+Example JSON Request:
+```json
+{}
+```
+
+Example JSON Response:
+```json
+{
+  "deleted": true
+}
+```
+
+Possible Errors:
+| Status | Example |
+| --- | --- |
+| 404 | {"detail": "Recommendation not found"} |
+| 403 | {"detail": "Role not allowed"} |
+
+### Vehicles: Update Rules
+Endpoint: `POST /api/v1/vehicle/rules`
+Purpose: Update vehicle rules (admin-only).
+Authentication: JWT
+Roles: ADMIN
+Required Headers: `Authorization: Bearer <jwt>`, `Content-Type: application/json`
+
+Path Params: None.
+Query Params: None.
+
+Request Body Schema:
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| food_allowed_vehicles | array<string> | No | Allowed vehicle types |
+| ev_reward_percentage | number | No | EV reward percentage |
+| ev_bonus_multiplier | number | No | EV bonus multiplier |
+
+Example JSON Request:
+```json
+{
+  "food_allowed_vehicles": ["BIKE_PETROL", "BIKE_EV"],
+  "ev_reward_percentage": 0.1,
+  "ev_bonus_multiplier": 1.2
+}
+```
+
+Example JSON Response:
+```json
+{
+  "rules": {
+    "food_allowed_vehicles": ["BIKE_PETROL", "BIKE_EV"],
+    "ev_reward_percentage": 0.1,
+    "ev_bonus_multiplier": 1.2
+  }
+}
+```
+
+Possible Errors:
+| Status | Example |
+| --- | --- |
+| 403 | {"detail": "Not allowed"} |
+
+## Notification APIs
+
+### Notifications: Send
+Endpoint: `POST /api/v1/notify/send`
+Purpose: Queue an immediate push notification.
+Authentication: JWT
+Roles: ADMIN
+Required Headers: `Authorization: Bearer <jwt>`, `Content-Type: application/json`
+
+Path Params: None.
+Query Params: None.
+
+Request Body Schema:
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| user_id | string | No | Target user id |
+| topic | string | No | FCM topic name |
+| title | string | Yes | Notification title |
+| body | string | No | Notification body |
+| data | object | No | Custom payload |
+| priority | string | No | LOW, NORMAL, HIGH |
+| silent | boolean | No | Default false |
+
+Example JSON Request:
+```json
+{
+  "user_id": "<user_id>",
+  "title": "Order placed",
+  "body": "Your order is being prepared",
+  "data": {"order_id": "<order_id>"},
+  "priority": "HIGH"
+}
+```
+
+Example JSON Response:
+```json
+{
+  "notification": {
+    "_id": "<notification_id>",
+    "status": "QUEUED",
+    "retry_count": 0
+  }
+}
+```
+
+Possible Errors:
+| Status | Example |
+| --- | --- |
+| 400 | {"title": ["This field is required."]} |
+| 403 | {"detail": "Role not allowed"} |
+
+### Notifications: Schedule
+Endpoint: `POST /api/v1/notify/schedule`
+Purpose: Schedule a notification for future delivery.
+Authentication: JWT
+Roles: ADMIN
+Required Headers: `Authorization: Bearer <jwt>`, `Content-Type: application/json`
+
+Path Params: None.
+Query Params: None.
+
+Request Body Schema:
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| user_id | string | No | Target user id |
+| topic | string | No | FCM topic name |
+| title | string | Yes | Notification title |
+| body | string | No | Notification body |
+| data | object | No | Custom payload |
+| priority | string | No | LOW, NORMAL, HIGH |
+| silent | boolean | No | Default false |
+| send_at | string | Yes | ISO 8601 datetime |
+
+Example JSON Request:
+```json
+{
+  "user_id": "<user_id>",
+  "title": "Promo",
+  "body": "Discount available",
+  "send_at": "2026-02-11T12:00:00Z"
+}
+```
+
+Example JSON Response:
+```json
+{
+  "notification": {
+    "_id": "<notification_id>",
+    "status": "SCHEDULED",
+    "send_at": "2026-02-11T12:00:00Z"
+  }
+}
+```
+
+Possible Errors:
+| Status | Example |
+| --- | --- |
+| 400 | {"send_at": ["This field is required."]} |
+| 403 | {"detail": "Role not allowed"} |
+
+### Notifications: History
+Endpoint: `GET /api/v1/notify/history`
+Purpose: List notification history.
+Authentication: JWT
+Roles: ADMIN
+Required Headers: `Authorization: Bearer <jwt>`
+
+Path Params: None.
+
+Query Params:
+| Name | Type | Description |
+| --- | --- | --- |
+| limit | integer | Optional. Default 50. |
+
+Request Body Schema: None.
+
+Example JSON Request:
+```json
+{}
+```
+
+Example JSON Response:
+```json
+{
+  "notifications": [
+    {"_id": "<notification_id>", "status": "SENT", "title": "Order placed"}
+  ]
+}
+```
+
+Possible Errors:
+| Status | Example |
+| --- | --- |
+| 403 | {"detail": "Role not allowed"} |
+
+### Notifications: Retry
+Endpoint: `POST /api/v1/notify/retry/<notification_id>`
+Purpose: Retry a failed or queued notification.
+Authentication: JWT
+Roles: ADMIN
+Required Headers: `Authorization: Bearer <jwt>`
+
+Path Params:
+| Name | Type | Description |
+| --- | --- | --- |
+| notification_id | string | Notification id |
+
+Query Params: None.
+Request Body Schema: None.
+
+Example JSON Request:
+```json
+{}
+```
+
+Example JSON Response:
 ```json
 {
   "queued": true
 }
 ```
 
-Error Example:
+Possible Errors:
+| Status | Example |
+| --- | --- |
+| 404 | {"detail": "Notification not found"} |
+| 403 | {"detail": "Role not allowed"} |
+
+## Trust/Fraud APIs
+
+### Trust: Register Device
+Endpoint: `POST /api/v1/trust/device/register`
+Purpose: Register a device for trust/risk analysis.
+Authentication: JWT
+Roles: USER, CAPTAIN, RESTAURANT, ADMIN
+Required Headers: `Authorization: Bearer <jwt>`, `Content-Type: application/json`
+
+Path Params: None.
+Query Params: None.
+
+Request Body Schema:
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| device_id | string | Yes | Device identifier |
+| platform | string | No | Platform name |
+| fingerprint | string | No | Device fingerprint |
+| ip | string | No | IP address |
+| meta | object | No | Metadata (e.g., location flags) |
+
+Example JSON Request:
 ```json
 {
-  "detail": "Notification not found"
+  "device_id": "device-123",
+  "platform": "android",
+  "fingerprint": "hash",
+  "meta": {"mock_location": false}
 }
 ```
 
-**Financial Ledger APIs**
-Wallet
-Endpoint: GET /api/v1/wallet/ledger
+Example JSON Response:
+```json
+{
+  "device": {
+    "device_id": "device-123",
+    "platform": "android"
+  }
+}
+```
 
-Purpose:
-List ledger entries for the authenticated user.
+Possible Errors:
+| Status | Example |
+| --- | --- |
+| 400 | {"device_id": ["This field is required."]} |
+| 401 | {"detail": "Authentication credentials were not provided"} |
 
-Method: GET
-
+### Trust: Scan
+Endpoint: `GET /api/v1/trust/scan`
+Purpose: Run a trust scan for duplicate devices and related signals.
 Authentication: JWT
+Roles: ADMIN
+Required Headers: `Authorization: Bearer <jwt>`
 
-Headers:
-Authorization: Bearer <jwt>
+Path Params: None.
 
-Example Request:
+Query Params:
+| Name | Type | Description |
+| --- | --- | --- |
+| user_id | string | Optional. Filter by user id. |
+
+Request Body Schema: None.
+
+Example JSON Request:
 ```json
 {}
 ```
 
-Example Response:
+Example JSON Response:
 ```json
 {
-  "entries": [
-    {
-      "account": "USER_WALLET",
-      "direction": "DEBIT",
-      "amount": 2500
-    }
-  ]
+  "findings": [
+    {"device_id": "device-123", "type": "DUPLICATE_DEVICE", "users": ["<user_id>"]}
+  ],
+  "device_count": 10
 }
 ```
 
-Error Example:
-```json
-{
-  "detail": "Invalid token"
-}
-```
+Possible Errors:
+| Status | Example |
+| --- | --- |
+| 403 | {"detail": "Role not allowed"} |
 
-Wallet
-Endpoint: POST /api/v1/wallet/settle
-
-Purpose:
-Run settlement for completed orders and rides.
-
-Method: POST
-
-Authentication: JWT (ADMIN)
-
-Headers:
-Content-Type: application/json
-Authorization: Bearer <jwt>
-
-Example Request:
-```json
-{
-  "limit": 50
-}
-```
-
-Example Response:
-```json
-{
-  "settled": [
-    {"reference_type": "ORDER", "amount": 45000}
-  ]
-}
-```
-
-Error Example:
-```json
-{
-  "detail": "Not allowed"
-}
-```
-
-**Trust & Safety APIs**
-Trust
-Endpoint: POST /api/v1/trust/risk-score
-
-Purpose:
-Calculate risk score using device reuse and location anomalies.
-
-Method: POST
-
+### Trust: Risk Score
+Endpoint: `POST /api/v1/trust/risk-score`
+Purpose: Calculate a risk score for a user and device.
 Authentication: JWT
+Roles: USER, CAPTAIN, RESTAURANT, ADMIN
+Required Headers: `Authorization: Bearer <jwt>`, `Content-Type: application/json`
 
-Headers:
-Content-Type: application/json
-Authorization: Bearer <jwt>
+Path Params: None.
+Query Params: None.
 
-Example Request:
+Request Body Schema:
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| user_id | string | Yes | User id |
+| device_id | string | No | Device id |
+
+Example JSON Request:
 ```json
 {
   "user_id": "<user_id>",
@@ -5469,40 +3314,163 @@ Example Request:
 }
 ```
 
-Example Response:
+Example JSON Response:
 ```json
 {
   "user_id": "<user_id>",
   "risk_score": 45,
   "reasons": [
-    {"type": "DEVICE_REUSE"}
+    {"type": "DEVICE_REUSE", "detail": "device used by multiple users"}
   ]
 }
 ```
 
-Error Example:
+Possible Errors:
+| Status | Example |
+| --- | --- |
+| 401 | {"detail": "Authentication credentials were not provided"} |
+
+### Fraud: Scan Users
+Endpoint: `GET /api/v1/fraud/scan/`
+Purpose: Run a fraud scan and return suspicious users.
+Authentication: JWT
+Roles: ADMIN
+Required Headers: `Authorization: Bearer <jwt>`
+
+Path Params: None.
+
+Query Params:
+| Name | Type | Description |
+| --- | --- | --- |
+| limit | integer | Optional. Default 200. |
+
+Request Body Schema: None.
+
+Example JSON Request:
+```json
+{}
+```
+
+Example JSON Response:
 ```json
 {
-  "detail": "Invalid token"
+  "suspicious": [
+    {
+      "user_id": "<user_id>",
+      "score": -0.42,
+      "features": {"wallet_credit": 200000, "ride_count": 2}
+    }
+  ]
 }
 ```
 
-**Chat Enhancement APIs**
-Chat
-Endpoint: POST /api/v1/chat/read
+Possible Errors:
+| Status | Example |
+| --- | --- |
+| 403 | {"detail": "Role not allowed"} |
 
-Purpose:
-Mark a room or message as read.
+## Chat APIs
 
-Method: POST
-
+### Chat: History
+Endpoint: `GET /api/v1/chat/history/<room_id>`
+Purpose: Fetch recent messages from a chat room.
 Authentication: JWT
+Roles: USER, CAPTAIN, RESTAURANT, ADMIN
+Required Headers: `Authorization: Bearer <jwt>`
 
-Headers:
-Content-Type: application/json
-Authorization: Bearer <jwt>
+Path Params:
+| Name | Type | Description |
+| --- | --- | --- |
+| room_id | string | Chat room id |
 
-Example Request:
+Query Params:
+| Name | Type | Description |
+| --- | --- | --- |
+| limit | integer | Optional. 1 to 200. Default 50. |
+
+Request Body Schema: None.
+
+Example JSON Request:
+```json
+{}
+```
+
+Example JSON Response:
+```json
+{
+  "messages": [
+    {
+      "_id": "<message_id>",
+      "room_id": "<room_id>",
+      "text": "Hello"
+    }
+  ]
+}
+```
+
+Possible Errors:
+| Status | Example |
+| --- | --- |
+| 403 | {"detail": "Not allowed"} |
+| 401 | {"detail": "Authentication credentials were not provided"} |
+
+### Chat: Masked Call
+Endpoint: `GET /api/v1/chat/call/<room_id>`
+Purpose: Get masked phone numbers for a call between participants.
+Authentication: JWT
+Roles: USER, CAPTAIN, RESTAURANT
+Required Headers: `Authorization: Bearer <jwt>`
+
+Path Params:
+| Name | Type | Description |
+| --- | --- | --- |
+| room_id | string | Chat room id |
+
+Query Params:
+| Name | Type | Description |
+| --- | --- | --- |
+| callee_id | string | Required. Target user id. |
+
+Request Body Schema: None.
+
+Example JSON Request:
+```json
+{}
+```
+
+Example JSON Response:
+```json
+{
+  "call": {
+    "caller": "+1-555-***-1234",
+    "callee": "+1-555-***-5678"
+  }
+}
+```
+
+Possible Errors:
+| Status | Example |
+| --- | --- |
+| 400 | {"detail": "callee_id is required"} |
+| 403 | {"detail": "Not allowed"} |
+
+### Chat: Read Receipt
+Endpoint: `POST /api/v1/chat/read`
+Purpose: Mark a room or message as read.
+Authentication: JWT
+Roles: USER, CAPTAIN, RESTAURANT, ADMIN
+Required Headers: `Authorization: Bearer <jwt>`, `Content-Type: application/json`
+
+Path Params: None.
+Query Params: None.
+
+Request Body Schema:
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| room_id | string | Yes | Chat room id |
+| message_id | string | No | Message id |
+
+Example JSON Request:
 ```json
 {
   "room_id": "<room_id>",
@@ -5510,7 +3478,7 @@ Example Request:
 }
 ```
 
-Example Response:
+Example JSON Response:
 ```json
 {
   "read": {
@@ -5520,28 +3488,28 @@ Example Response:
 }
 ```
 
-Error Example:
-```json
-{
-  "detail": "Not allowed"
-}
-```
+Possible Errors:
+| Status | Example |
+| --- | --- |
+| 403 | {"detail": "Not allowed"} |
 
-Chat
-Endpoint: POST /api/v1/chat/typing
-
-Purpose:
-Record typing events for a room.
-
-Method: POST
-
+### Chat: Typing Indicator
+Endpoint: `POST /api/v1/chat/typing`
+Purpose: Record typing events for a room.
 Authentication: JWT
+Roles: USER, CAPTAIN, RESTAURANT, ADMIN
+Required Headers: `Authorization: Bearer <jwt>`, `Content-Type: application/json`
 
-Headers:
-Content-Type: application/json
-Authorization: Bearer <jwt>
+Path Params: None.
+Query Params: None.
 
-Example Request:
+Request Body Schema:
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| room_id | string | Yes | Chat room id |
+| is_typing | boolean | Yes | Typing state |
+
+Example JSON Request:
 ```json
 {
   "room_id": "<room_id>",
@@ -5549,7 +3517,7 @@ Example Request:
 }
 ```
 
-Example Response:
+Example JSON Response:
 ```json
 {
   "typing": {
@@ -5559,235 +3527,736 @@ Example Response:
 }
 ```
 
-Error Example:
-```json
-{
-  "detail": "Not allowed"
-}
-```
+Possible Errors:
+| Status | Example |
+| --- | --- |
+| 403 | {"detail": "Not allowed"} |
 
-**UX Product APIs**
-Orders
-Endpoint: POST /api/v1/orders/reorder/{id}
+## Wallet/Ledger APIs
 
-Purpose:
-Create a new order based on a previous order.
+### Wallet: Transactions
+Endpoint: `GET /api/v1/wallet/transactions/`
+Purpose: List wallet transactions for the authenticated user.
+Authentication: JWT
+Roles: Any authenticated
+Required Headers: `Authorization: Bearer <jwt>`
 
-Method: POST
+Path Params: None.
+Query Params: None.
+Request Body Schema: None.
 
-Authentication: JWT (USER)
-
-Headers:
-Content-Type: application/json
-Authorization: Bearer <jwt>
-
-Example Request:
-```json
-{
-  "payment_mode": "WALLET_RAZORPAY",
-  "wallet_amount": 2000
-}
-```
-
-Example Response:
-```json
-{
-  "order": {"_id": "<new_order_id>"},
-  "items": [],
-  "razorpay_order": {"id": "order_abc"}
-}
-```
-
-Error Example:
-```json
-{
-  "detail": "Order not found"
-}
-```
-
-Users
-Endpoint: POST /api/v1/favorites
-
-Purpose:
-Add a restaurant or menu item to favorites.
-
-Method: POST
-
-Authentication: JWT (USER)
-
-Headers:
-Content-Type: application/json
-Authorization: Bearer <jwt>
-
-Example Request:
-```json
-{
-  "favorite_type": "RESTAURANT",
-  "reference_id": "<restaurant_id>"
-}
-```
-
-Example Response:
-```json
-{
-  "favorite": {
-    "favorite_type": "RESTAURANT",
-    "reference_id": "<restaurant_id>"
-  }
-}
-```
-
-Error Example:
-```json
-{
-  "detail": "Invalid token"
-}
-```
-
-Rides
-Endpoint: POST /api/v1/rides/schedule
-
-Purpose:
-Schedule a ride for a future time.
-
-Method: POST
-
-Authentication: JWT (USER)
-
-Headers:
-Content-Type: application/json
-Authorization: Bearer <jwt>
-
-Example Request:
-```json
-{
-  "pickup_lat": 12.97,
-  "pickup_lng": 77.59,
-  "dropoff_lat": 12.93,
-  "dropoff_lng": 77.61,
-  "vehicle_type": "BIKE",
-  "scheduled_for": "2026-02-11T09:00:00Z"
-}
-```
-
-Example Response:
-```json
-{
-  "ride": {
-    "status": "SCHEDULED",
-    "scheduled_for": "2026-02-11T09:00:00Z"
-  }
-}
-```
-
-Error Example:
-```json
-{
-  "detail": "Invalid vehicle_type"
-}
-```
-
-Support
-Endpoint: POST /api/v1/support/ticket
-
-Purpose:
-Create a support ticket.
-
-Method: POST
-
-Authentication: JWT (USER/CAPTAIN/RESTAURANT)
-
-Headers:
-Content-Type: application/json
-Authorization: Bearer <jwt>
-
-Example Request:
-```json
-{
-  "subject": "Refund issue",
-  "message": "I was charged twice",
-  "priority": "HIGH"
-}
-```
-
-Example Response:
-```json
-{
-  "ticket": {
-    "status": "OPEN",
-    "subject": "Refund issue"
-  }
-}
-```
-
-Error Example:
-```json
-{
-  "detail": "Invalid token"
-}
-```
-
-**Observability APIs**
-System
-Endpoint: GET /api/v1/health
-
-Purpose:
-Health check endpoint.
-
-Method: GET
-
-Authentication: None
-
-Headers:
-None
-
-Example Request:
+Example JSON Request:
 ```json
 {}
 ```
 
-Example Response:
+Example JSON Response:
+```json
+{
+  "transactions": [
+    {"_id": "<txn_id>", "type": "DEBIT", "amount": 2500, "reason": "FOOD_ORDER"}
+  ]
+}
+```
+
+Possible Errors:
+| Status | Example |
+| --- | --- |
+| 401 | {"detail": "Authentication credentials were not provided"} |
+
+### Wallet: Refund
+Endpoint: `POST /api/v1/wallet/refund/`
+Purpose: Create a wallet refund transaction.
+Authentication: JWT
+Roles: USER
+Required Headers: `Authorization: Bearer <jwt>`, `Content-Type: application/json`
+
+Path Params: None.
+Query Params: None.
+
+Request Body Schema:
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| reference | string | No | Reference id (order/ride) |
+| amount | integer | Yes | Refund amount |
+| reason | string | Yes | Refund reason |
+| source | string | Yes | FOOD, RIDE, REFUND |
+
+Example JSON Request:
+```json
+{
+  "reference": "<order_id>",
+  "amount": 5000,
+  "reason": "Order cancelled",
+  "source": "FOOD"
+}
+```
+
+Example JSON Response:
+```json
+{
+  "transaction": {
+    "_id": "<txn_id>",
+    "type": "CREDIT",
+    "amount": 5000
+  }
+}
+```
+
+Possible Errors:
+| Status | Example |
+| --- | --- |
+| 400 | {"detail": "Refund failed"} |
+| 403 | {"detail": "Role not allowed"} |
+
+### Wallet: Ledger
+Endpoint: `GET /api/v1/wallet/ledger`
+Purpose: List ledger entries for the authenticated user.
+Authentication: JWT
+Roles: Any authenticated
+Required Headers: `Authorization: Bearer <jwt>`
+
+Path Params: None.
+
+Query Params:
+| Name | Type | Description |
+| --- | --- | --- |
+| limit | integer | Optional. Default 50. |
+
+Request Body Schema: None.
+
+Example JSON Request:
+```json
+{}
+```
+
+Example JSON Response:
+```json
+{
+  "entries": [
+    {"_id": "<entry_id>", "direction": "DEBIT", "amount": 2500}
+  ]
+}
+```
+
+Possible Errors:
+| Status | Example |
+| --- | --- |
+| 401 | {"detail": "Authentication credentials were not provided"} |
+
+### Wallet: Settle
+Endpoint: `POST /api/v1/wallet/settle`
+Purpose: Run settlement for completed orders and rides.
+Authentication: JWT
+Roles: ADMIN
+Required Headers: `Authorization: Bearer <jwt>`, `Content-Type: application/json`
+
+Path Params: None.
+Query Params: None.
+
+Request Body Schema:
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| limit | integer | No | 1 to 500 (default 50) |
+
+Example JSON Request:
+```json
+{
+  "limit": 50
+}
+```
+
+Example JSON Response:
+```json
+{
+  "settled": [
+    {"reference_type": "ORDER", "amount": 45000}
+  ]
+}
+```
+
+Possible Errors:
+| Status | Example |
+| --- | --- |
+| 403 | {"detail": "Role not allowed"} |
+
+### Wallet: Analytics
+Endpoint: `GET /api/v1/wallet/analytics/<user_id>/`
+Purpose: Fetch wallet analytics for a user (admins) or self (users).
+Authentication: JWT
+Roles: USER, ADMIN
+Required Headers: `Authorization: Bearer <jwt>`
+
+Path Params:
+| Name | Type | Description |
+| --- | --- | --- |
+| user_id | string | Target user id |
+
+Query Params: None.
+Request Body Schema: None.
+
+Example JSON Request:
+```json
+{}
+```
+
+Example JSON Response:
+```json
+{
+  "analytics": {
+    "totals": {"credits": 200000, "debits": 150000, "rewards": 5000, "refunds": 1000},
+    "daily": {"2026-02-10": {"credits": 2000, "debits": 1500, "rewards": 0, "refunds": 0}}
+  }
+}
+```
+
+Possible Errors:
+| Status | Example |
+| --- | --- |
+| 403 | {"detail": "Not allowed"} |
+| 404 | {"detail": "User not found"} |
+
+## Matching/Jobs
+
+### Jobs: Create
+Endpoint: `POST /api/v1/jobs/create/`
+Purpose: Create a matching job for an order or ride.
+Authentication: JWT
+Roles: USER, RESTAURANT
+Required Headers: `Authorization: Bearer <jwt>`, `Content-Type: application/json`
+
+Path Params: None.
+Query Params: None.
+
+Request Body Schema:
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| job_type | string | Yes | ORDER or RIDE |
+| job_id | string | Yes | Order or ride id |
+
+Example JSON Request:
+```json
+{
+  "job_type": "ORDER",
+  "job_id": "<order_id>"
+}
+```
+
+Example JSON Response:
+```json
+{
+  "candidates": ["<captain_id>"]
+}
+```
+
+Possible Errors:
+| Status | Example |
+| --- | --- |
+| 400 | {"detail": "Invalid job_type"} |
+| 403 | {"detail": "Role not allowed"} |
+
+### Jobs: Accept
+Endpoint: `POST /api/v1/jobs/accept/`
+Purpose: Accept a matching job (captain action).
+Authentication: JWT
+Roles: CAPTAIN
+Required Headers: `Authorization: Bearer <jwt>`, `Content-Type: application/json`
+
+Path Params: None.
+Query Params: None.
+
+Request Body Schema:
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| job_type | string | Yes | ORDER or RIDE |
+| job_id | string | Yes | Order or ride id |
+
+Example JSON Request:
+```json
+{
+  "job_type": "ORDER",
+  "job_id": "<order_id>"
+}
+```
+
+Example JSON Response:
+```json
+{
+  "job": {
+    "user_id": "<captain_id>",
+    "current_job_id": "<order_id>",
+    "current_job_type": "ORDER",
+    "is_busy": true
+  }
+}
+```
+
+Possible Errors:
+| Status | Example |
+| --- | --- |
+| 400 | {"detail": "Job not found"} |
+| 403 | {"detail": "Role not allowed"} |
+
+### Jobs: Reject
+Endpoint: `POST /api/v1/jobs/reject/`
+Purpose: Reject a matching job (captain action).
+Authentication: JWT
+Roles: CAPTAIN
+Required Headers: `Authorization: Bearer <jwt>`, `Content-Type: application/json`
+
+Path Params: None.
+Query Params: None.
+
+Request Body Schema:
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| job_type | string | Yes | ORDER or RIDE |
+| job_id | string | Yes | Order or ride id |
+
+Example JSON Request:
+```json
+{
+  "job_type": "RIDE",
+  "job_id": "<ride_id>"
+}
+```
+
+Example JSON Response:
+```json
+{
+  "rejected": true
+}
+```
+
+Possible Errors:
+| Status | Example |
+| --- | --- |
+| 400 | {"detail": "Job not found"} |
+| 403 | {"detail": "Role not allowed"} |
+
+### Jobs: Complete
+Endpoint: `POST /api/v1/jobs/complete/`
+Purpose: Complete a matching job (captain action).
+Authentication: JWT
+Roles: CAPTAIN
+Required Headers: `Authorization: Bearer <jwt>`, `Content-Type: application/json`
+
+Path Params: None.
+Query Params: None.
+
+Request Body Schema:
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| job_type | string | Yes | ORDER or RIDE |
+| job_id | string | Yes | Order or ride id |
+
+Example JSON Request:
+```json
+{
+  "job_type": "RIDE",
+  "job_id": "<ride_id>"
+}
+```
+
+Example JSON Response:
+```json
+{
+  "job": {
+    "user_id": "<captain_id>",
+    "current_job_id": null,
+    "current_job_type": null,
+    "is_busy": false
+  }
+}
+```
+
+Possible Errors:
+| Status | Example |
+| --- | --- |
+| 400 | {"detail": "Job not found"} |
+| 403 | {"detail": "Role not allowed"} |
+
+### Jobs: Accept (Legacy Captain Path)
+Endpoint: `POST /api/v1/captains/accept-job/`
+Purpose: Accept a matching job (legacy captain path).
+Authentication: JWT
+Roles: CAPTAIN
+Required Headers: `Authorization: Bearer <jwt>`, `Content-Type: application/json`
+
+Path Params: None.
+Query Params: None.
+
+Request Body Schema:
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| job_type | string | Yes | ORDER or RIDE |
+| job_id | string | Yes | Order or ride id |
+
+Example JSON Request:
+```json
+{
+  "job_type": "ORDER",
+  "job_id": "<order_id>"
+}
+```
+
+Example JSON Response:
+```json
+{
+  "job": {
+    "user_id": "<captain_id>",
+    "current_job_id": "<order_id>",
+    "current_job_type": "ORDER",
+    "is_busy": true
+  }
+}
+```
+
+Possible Errors:
+| Status | Example |
+| --- | --- |
+| 400 | {"detail": "Job not found"} |
+| 403 | {"detail": "Role not allowed"} |
+
+### Jobs: Complete (Legacy Captain Path)
+Endpoint: `POST /api/v1/captains/complete-job/`
+Purpose: Complete a matching job (legacy captain path).
+Authentication: JWT
+Roles: CAPTAIN
+Required Headers: `Authorization: Bearer <jwt>`, `Content-Type: application/json`
+
+Path Params: None.
+Query Params: None.
+
+Request Body Schema:
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| job_type | string | Yes | ORDER or RIDE |
+| job_id | string | Yes | Order or ride id |
+
+Example JSON Request:
+```json
+{
+  "job_type": "ORDER",
+  "job_id": "<order_id>"
+}
+```
+
+Example JSON Response:
+```json
+{
+  "job": {
+    "user_id": "<captain_id>",
+    "current_job_id": null,
+    "current_job_type": null,
+    "is_busy": false
+  }
+}
+```
+
+Possible Errors:
+| Status | Example |
+| --- | --- |
+| 400 | {"detail": "Job not found"} |
+| 403 | {"detail": "Role not allowed"} |
+
+### Cancellation: Cancel Order
+Endpoint: `POST /api/v1/cancel/order`
+Purpose: Cancel an order with a reason and optional flags.
+Authentication: JWT
+Roles: USER, CAPTAIN, RESTAURANT, ADMIN
+Required Headers: `Authorization: Bearer <jwt>`, `Content-Type: application/json`
+
+Path Params: None.
+Query Params: None.
+
+Request Body Schema:
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| order_id | string | Yes | Order id |
+| actor | string | No | USER, CAPTAIN, RESTAURANT, SYSTEM, ADMIN |
+| reason | string | Yes | Cancellation reason |
+| late_delivery | boolean | No | Late delivery flag |
+| no_show | boolean | No | No-show flag |
+| metadata | object | No | Additional data |
+
+Example JSON Request:
+```json
+{
+  "order_id": "<order_id>",
+  "reason": "User cancelled",
+  "late_delivery": false
+}
+```
+
+Example JSON Response:
+```json
+{
+  "result": {
+    "cancellation": {
+      "job_type": "ORDER",
+      "job_id": "<order_id>",
+      "actor_role": "USER",
+      "reason": "User cancelled"
+    },
+    "refund": {
+      "amount": 5000,
+      "source": "CANCEL"
+    },
+    "penalty": null
+  }
+}
+```
+
+Possible Errors:
+| Status | Example |
+| --- | --- |
+| 400 | {"detail": "Invalid order id"} |
+| 400 | {"detail": "Order not found"} |
+| 400 | {"detail": "Order already closed"} |
+| 401 | {"detail": "Authentication credentials were not provided"} |
+
+### Cancellation: Cancel Ride
+Endpoint: `POST /api/v1/cancel/ride`
+Purpose: Cancel a ride with a reason and optional flags.
+Authentication: JWT
+Roles: USER, CAPTAIN, ADMIN
+Required Headers: `Authorization: Bearer <jwt>`, `Content-Type: application/json`
+
+Path Params: None.
+Query Params: None.
+
+Request Body Schema:
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| ride_id | string | Yes | Ride id |
+| actor | string | No | USER, CAPTAIN, RESTAURANT, SYSTEM, ADMIN |
+| reason | string | Yes | Cancellation reason |
+| no_show | boolean | No | No-show flag |
+| metadata | object | No | Additional data |
+
+Example JSON Request:
+```json
+{
+  "ride_id": "<ride_id>",
+  "reason": "User cancelled"
+}
+```
+
+Example JSON Response:
+```json
+{
+  "result": {
+    "cancellation": {
+      "job_type": "RIDE",
+      "job_id": "<ride_id>",
+      "actor_role": "USER",
+      "reason": "User cancelled"
+    },
+    "refund": {
+      "amount": 3000,
+      "source": "CANCEL"
+    },
+    "penalty": null
+  }
+}
+```
+
+Possible Errors:
+| Status | Example |
+| --- | --- |
+| 400 | {"detail": "Invalid ride id"} |
+| 400 | {"detail": "Ride not found"} |
+| 400 | {"detail": "Ride already closed"} |
+| 401 | {"detail": "Authentication credentials were not provided"} |
+
+## Observability
+
+### Health
+Endpoint: `GET /api/v1/health`
+Purpose: Health check endpoint (database ping).
+Authentication: None
+Roles: None
+Required Headers: None
+
+Path Params: None.
+Query Params: None.
+Request Body Schema: None.
+
+Example JSON Request:
+```json
+{}
+```
+
+Example JSON Response:
 ```json
 {
   "status": "ok",
-  "timestamp": "2026-02-10T12:30:00Z"
+  "timestamp": "2026-02-11T00:00:00Z"
 }
 ```
 
-Error Example:
-```json
-{
-  "status": "degraded",
-  "timestamp": "2026-02-10T12:30:00Z"
-}
-```
+Possible Errors: None (returns `status: degraded` on failure).
 
-System
-Endpoint: GET /api/v1/metrics
-
-Purpose:
-Prometheus metrics export.
-
-Method: GET
-
+### Metrics
+Endpoint: `GET /api/v1/metrics`
+Purpose: Prometheus metrics endpoint.
 Authentication: None
+Roles: None
+Required Headers: None
 
-Headers:
-None
+Path Params: None.
+Query Params: None.
+Request Body Schema: None.
 
 Example Request:
-```json
-{}
+```text
+GET /api/v1/metrics
 ```
 
 Example Response:
-```json
+```text
 # HELP http_requests_total Total HTTP requests
 # TYPE http_requests_total counter
 http_requests_total{method="GET",path="/api/v1/health",status="200"} 42
 ```
 
-Error Example:
+Possible Errors:
+| Status | Example |
+| --- | --- |
+| 501 | prometheus_client not installed |
+
+## WebSocket APIs
+
+### WS: Captain Channel
+URI: `ws://<host>/ws/captain/<captain_id>/`
+Purpose: Real-time job offers and status updates for captains.
+Authentication: None enforced at consumer (connection uses `AuthMiddlewareStack`).
+Required Headers: None
+
+Path Params:
+| Name | Type | Description |
+| --- | --- | --- |
+| captain_id | string | Captain user id |
+
+Query Params: None.
+
+Example Messages (client -> server):
 ```json
-prometheus_client not installed
+{"type": "ping"}
+```
+
+Example Messages (server -> client):
+```json
+{"type": "pong"}
+```
+```json
+{"type": "job_offer", "data": {"job_id": "<order_or_ride_id>"}}
+```
+```json
+{"type": "job_assigned", "data": {"job_id": "<order_or_ride_id>"}}
+```
+```json
+{"type": "job_status", "data": {"status": "ASSIGNED"}}
+```
+
+### WS: User Channel
+URI: `ws://<host>/ws/user/<user_id>/`
+Purpose: Real-time updates for users (assignments, status, location updates).
+Authentication: None enforced at consumer (connection uses `AuthMiddlewareStack`).
+Required Headers: None
+
+Path Params:
+| Name | Type | Description |
+| --- | --- | --- |
+| user_id | string | User id |
+
+Query Params: None.
+
+Example Messages (client -> server):
+```json
+{"type": "ping"}
+```
+
+Example Messages (server -> client):
+```json
+{"type": "pong"}
+```
+```json
+{"type": "job_assigned", "data": {"job_id": "<order_or_ride_id>"}}
+```
+```json
+{"type": "location_update", "data": {"lat": 12.97, "lng": 77.59}}
+```
+```json
+{"type": "job_status", "data": {"status": "EN_ROUTE"}}
+```
+
+### WS: Order Tracking
+URI: `ws://<host>/ws/order/<order_id>/`
+Purpose: Order tracking updates (typically captain location updates).
+Authentication: None enforced at consumer (connection uses `AuthMiddlewareStack`).
+Required Headers: None
+
+Path Params:
+| Name | Type | Description |
+| --- | --- | --- |
+| order_id | string | Order id |
+
+Query Params: None.
+
+Example Messages (client -> server):
+```json
+{"type": "ping"}
+```
+
+Example Messages (server -> client):
+```json
+{"type": "pong"}
+```
+```json
+{"type": "location_update", "data": {"lat": 12.97, "lng": 77.59}}
+```
+
+### WS: Chat Room
+URI: `ws://<host>/ws/chat/<room_id>/`
+Purpose: Real-time chat between users, captains, and restaurants.
+Authentication: None enforced at consumer (connection uses `AuthMiddlewareStack`).
+Required Headers: None
+
+Path Params:
+| Name | Type | Description |
+| --- | --- | --- |
+| room_id | string | Chat room id |
+
+Query Params: None.
+
+Example Messages (client -> server):
+```json
+{
+  "type": "message",
+  "sender_id": "<user_id>",
+  "sender_role": "USER",
+  "receiver_id": "<captain_id>",
+  "receiver_role": "CAPTAIN",
+  "message": "On my way",
+  "client_message_id": "msg_123"
+}
+```
+```json
+{"type": "delivered", "message_id": "<message_id>", "user_id": "<user_id>"}
+```
+```json
+{"type": "ping"}
+```
+
+Example Messages (server -> client):
+```json
+{"type": "ack", "message_id": "<message_id>"}
+```
+```json
+{"type": "message", "data": {"message": {"id": "<message_id>", "room_id": "<room_id>", "text": "On my way"}}}
+```
+```json
+{"type": "error", "detail": "Invalid message"}
 ```
