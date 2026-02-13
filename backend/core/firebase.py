@@ -6,14 +6,21 @@ from django.conf import settings
 
 
 def get_firebase_app():
+    # If already initialized, return it
     if firebase_admin._apps:
         return firebase_admin.get_app()
 
-    cred = None
+    # Option 1: Use file path from settings
     if settings.FIREBASE_CREDENTIALS and os.path.exists(settings.FIREBASE_CREDENTIALS):
         cred = credentials.Certificate(settings.FIREBASE_CREDENTIALS)
+
+    # Option 2: Use JSON string from environment
     elif settings.FIREBASE_CREDENTIALS_JSON:
-        cred = credentials.Certificate(json.loads(settings.FIREBASE_CREDENTIALS_JSON))
+        cred = credentials.Certificate(
+            json.loads(settings.FIREBASE_CREDENTIALS_JSON)
+        )
+
+    # Option 3: Use default credentials (not common)
     else:
         cred = credentials.ApplicationDefault()
 

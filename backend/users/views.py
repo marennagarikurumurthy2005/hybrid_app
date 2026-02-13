@@ -38,6 +38,37 @@ class FirebaseLoginView(APIView):
     #   "id_token": "<firebase_id_token>",
     #   "role": "USER"
     # }
+    def get(self, request):
+        auth_header = request.headers.get("Authorization")
+        if not auth_header:
+            return Response({"error": "No token provided"}, status=status.HTTP_401_UNAUTHORIZED)
+
+        parts = auth_header.split(" ", 1)
+        if len(parts) != 2:
+            return Response({"error": "Invalid authorization header"}, status=status.HTTP_401_UNAUTHORIZED)
+
+        try:
+            token = parts[1]
+            firebase_app = get_firebase_app()
+            decoded = firebase_auth.verify_id_token(
+                token,
+                app=firebase_app,
+                clock_skew_seconds=60,
+            )
+
+            uid = decoded.get("uid")
+            phone = decoded.get("phone_number")
+            if not phone and decoded.get("uid"):
+                user_record = firebase_auth.get_user(decoded["uid"], app=firebase_app)
+                phone = user_record.phone_number
+
+            return Response({
+                "uid": uid,
+                "phone": phone,
+            })
+        except Exception as exc:
+            return Response({"error": str(exc)}, status=status.HTTP_401_UNAUTHORIZED)
+
     def post(self, request):
         serializer = FirebaseLoginSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -48,7 +79,21 @@ class FirebaseLoginView(APIView):
         device_name = serializer.validated_data.get("device_name") or request.headers.get("X-Device-Name")
 
         firebase_app = get_firebase_app()
-        decoded = firebase_auth.verify_id_token(id_token, app=firebase_app)
+        
+        try:
+            # We verify the token here
+            decoded = firebase_auth.verify_id_token(
+                id_token,
+                app=firebase_app,
+                clock_skew_seconds=60, # Or increase to 300 if your server clock is unreliable
+            )
+        except Exception as exc:
+            # This catches the "Token used too early" and other JWT errors
+            # and returns a clean 401 instead of a 500 crash.
+            return Response(
+                {"detail": f"Authentication failed: {str(exc)}"}, 
+                status=status.HTTP_401_UNAUTHORIZED
+            )
 
         phone = decoded.get("phone_number")
         if not phone and decoded.get("uid"):
